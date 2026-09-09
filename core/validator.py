@@ -2,21 +2,46 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
-PREPOSITIONS = {"de", "da", "do", "dos", "das", "e"}
+PREPOSICOES = {"de", "da", "do", "dos", "das", "e"}
 
 
 @dataclass
-class StudentValidation:
-    """Resultado da validação e higienização de um aluno."""
+class ValidacaoAluno:
+    """Resultado da validação e higienização de dados de um Aluno."""
 
-    name: str
+    nome: str
     cpf: str
-    formatted_cpf: str
-    masked_cpf: str
-    is_valid: bool
-    errors: List[str] = field(default_factory=list)
+    cpf_formatado: str
+    cpf_mascarado: str
+    is_valido: bool
+    erros: List[str] = field(default_factory=list)
+
+    # Aliases de conveniência para compatibilidade com inglês
+    @property
+    def name(self) -> str:
+        return self.nome
+
+    @property
+    def formatted_cpf(self) -> str:
+        return self.cpf_formatado
+
+    @property
+    def masked_cpf(self) -> str:
+        return self.cpf_mascarado
+
+    @property
+    def is_valid(self) -> bool:
+        return self.is_valido
+
+    @property
+    def errors(self) -> List[str]:
+        return self.erros
+
+
+# Alias de domínio
+StudentValidation = ValidacaoAluno
 
 
 def clean_cpf(cpf: Optional[str]) -> str:
@@ -24,6 +49,13 @@ def clean_cpf(cpf: Optional[str]) -> str:
     if not cpf:
         return ""
     return re.sub(r"\D", "", str(cpf))
+
+
+def _calcular_digito_verificador(digitos: Sequence[int], pesos: Sequence[int]) -> int:
+    """Calcula dígito verificador segundo o algoritmo módulo 11."""
+    soma = sum(d * p for d, p in zip(digitos, pesos))
+    resto = soma % 11
+    return 0 if resto < 2 else 11 - resto
 
 
 def validate_cpf(cpf: Optional[str]) -> bool:
@@ -40,20 +72,16 @@ def validate_cpf(cpf: Optional[str]) -> bool:
     if cleaned == cleaned[0] * 11:
         return False
 
-    # Validação do primeiro dígito verificador
-    soma_1 = sum(int(cleaned[i]) * (10 - i) for i in range(9))
-    resto_1 = soma_1 % 11
-    digito_1 = 0 if resto_1 < 2 else 11 - resto_1
+    digitos = [int(c) for c in cleaned]
 
-    if int(cleaned[9]) != digito_1:
+    # Primeiro dígito verificador (pesos 10 a 2)
+    digito_1 = _calcular_digito_verificador(digitos[:9], range(10, 1, -1))
+    if digitos[9] != digito_1:
         return False
 
-    # Validação do segundo dígito verificador
-    soma_2 = sum(int(cleaned[i]) * (11 - i) for i in range(10))
-    resto_2 = soma_2 % 11
-    digito_2 = 0 if resto_2 < 2 else 11 - resto_2
-
-    if int(cleaned[10]) != digito_2:
+    # Segundo dígito verificador (pesos 11 a 2)
+    digito_2 = _calcular_digito_verificador(digitos[:10], range(11, 1, -1))
+    if digitos[10] != digito_2:
         return False
 
     return True
@@ -77,7 +105,7 @@ def mask_cpf(cpf: Optional[str]) -> str:
 
 def normalize_name(name: Optional[str]) -> str:
     """
-    Normaliza o nome do aluno em Title Case preservando
+    Normaliza o nome do Aluno em Title Case preservando
     preposições em minúsculas ('de', 'da', 'do', 'dos', 'das', 'e').
     """
     if not name:
@@ -90,7 +118,7 @@ def normalize_name(name: Optional[str]) -> str:
     normalized_words = []
     for i, word in enumerate(words):
         lower_word = word.lower()
-        if i > 0 and lower_word in PREPOSITIONS:
+        if i > 0 and lower_word in PREPOSICOES:
             normalized_words.append(lower_word)
         else:
             normalized_words.append(lower_word.capitalize())
@@ -98,30 +126,34 @@ def normalize_name(name: Optional[str]) -> str:
     return " ".join(normalized_words)
 
 
-def validate_student(name: Optional[str], cpf: Optional[str]) -> StudentValidation:
+def validar_aluno(nome: Optional[str], cpf: Optional[str]) -> ValidacaoAluno:
     """
-    Valida e normaliza os dados de um aluno.
-    Retorna uma instância de StudentValidation com status e mensagens de erro.
+    Valida e normaliza os dados de um Aluno.
+    Retorna uma instância de ValidacaoAluno com status e mensagens de erro.
     """
-    errors: List[str] = []
+    erros: List[str] = []
 
-    norm_name = normalize_name(name)
-    if not norm_name:
-        errors.append("Nome do aluno não pode ser vazio.")
+    nome_norm = normalize_name(nome)
+    if not nome_norm:
+        erros.append("Nome do aluno não pode ser vazio.")
 
-    cleaned_cpf = clean_cpf(cpf)
-    cpf_valid = validate_cpf(cleaned_cpf)
-    if not cpf_valid:
-        errors.append("CPF inválido ou com dígitos verificadores incorretos.")
+    cpf_limpo = clean_cpf(cpf)
+    cpf_valido = validate_cpf(cpf_limpo)
+    if not cpf_valido:
+        erros.append("CPF inválido ou com dígitos verificadores incorretos.")
 
-    formatted = format_cpf(cleaned_cpf) if len(cleaned_cpf) == 11 else cleaned_cpf
-    masked = mask_cpf(cleaned_cpf) if len(cleaned_cpf) == 11 else cleaned_cpf
+    formatado = format_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
+    mascarado = mask_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
 
-    return StudentValidation(
-        name=norm_name,
-        cpf=cleaned_cpf,
-        formatted_cpf=formatted,
-        masked_cpf=masked,
-        is_valid=len(errors) == 0,
-        errors=errors,
+    return ValidacaoAluno(
+        nome=nome_norm,
+        cpf=cpf_limpo,
+        cpf_formatado=formatado,
+        cpf_mascarado=mascarado,
+        is_valido=len(erros) == 0,
+        erros=erros,
     )
+
+
+# Alias para compatibilidade
+validate_student = validar_aluno

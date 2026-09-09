@@ -5,8 +5,8 @@ from core.validator import (
     format_cpf,
     mask_cpf,
     normalize_name,
-    validate_student,
-    StudentValidation,
+    validar_aluno,
+    ValidacaoAluno,
 )
 
 
@@ -27,7 +27,6 @@ def test_validate_cpf_valid():
     # Valid CPF starting with zero
     assert validate_cpf("01234567890") is True
     assert validate_cpf("012.345.678-90") is True
-
 
 
 def test_validate_cpf_invalid_repeated_digits():
@@ -75,21 +74,20 @@ def test_normalize_name():
     assert normalize_name(None) == ""
 
 
-
-def test_validate_student_success():
-    result = validate_student("MARIA DA SILVA", "529.982.247-25")
-    assert isinstance(result, StudentValidation)
-    assert result.is_valid is True
-    assert result.name == "Maria da Silva"
+def test_validar_aluno_success():
+    result = validar_aluno("MARIA DA SILVA", "529.982.247-25")
+    assert isinstance(result, ValidacaoAluno)
+    assert result.is_valido is True
+    assert result.nome == "Maria da Silva"
     assert result.cpf == "52998224725"
-    assert result.formatted_cpf == "529.982.247-25"
-    assert result.masked_cpf == "***.982.247-**"
-    assert result.errors == []
+    assert result.cpf_formatado == "529.982.247-25"
+    assert result.cpf_mascarado == "***.982.247-**"
+    assert result.erros == []
 
 
-def test_validate_student_failure():
-    result = validate_student("   ", "123.456.789-00")
-    assert result.is_valid is False
-    assert len(result.errors) >= 2
-    assert any("Nome" in err for err in result.errors)
-    assert any("CPF" in err for err in result.errors)
+def test_validar_aluno_failure():
+    result = validar_aluno("   ", "123.456.789-00")
+    assert result.is_valido is False
+    assert len(result.erros) >= 2
+    assert any("Nome" in err for err in result.erros)
+    assert any("CPF" in err for err in result.erros)
