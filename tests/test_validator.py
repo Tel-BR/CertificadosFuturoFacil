@@ -107,3 +107,23 @@ def test_validar_aluno_sem_cpf_quando_obrigatorio():
     result = validar_aluno("Lucas Silva", "", cpf_obrigatorio=True)
     assert result.is_valido is False
     assert "CPF do aluno é obrigatório." in result.erros
+
+
+def test_validar_aluno_frequencia_minima():
+    """Testa regra de frequência mínima de 75%."""
+    # 75% exato -> aprovado
+    res_75 = validar_aluno("Lucas Silva", "529.982.247-25", frequencia=75)
+    assert res_75.is_valido is True
+    assert res_75.frequencia == 75
+
+    # 74% -> reprovado
+    res_74 = validar_aluno("Lucas Silva", "529.982.247-25", frequencia=74)
+    assert res_74.is_valido is False
+    assert any("75%" in err for err in res_74.erros)
+    assert res_74.frequencia == 74
+
+    # 100% -> aprovado
+    res_100 = validar_aluno("Lucas Silva", "529.982.247-25", frequencia=100)
+    assert res_100.is_valido is True
+    assert res_100.frequencia == 100
+

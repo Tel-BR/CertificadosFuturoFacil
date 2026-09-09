@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Union
 
 PREPOSICOES = {"de", "da", "do", "dos", "das", "e"}
 
@@ -17,6 +17,9 @@ class ValidacaoAluno:
     cpf_mascarado: str
     is_valido: bool
     erros: List[str] = field(default_factory=list)
+    frequencia: int = 100
+    horas_presentes: Optional[int] = None
+    horas_totais: Optional[int] = None
 
     # Aliases de conveniência para compatibilidade com inglês
     @property
@@ -130,11 +133,16 @@ def validar_aluno(
     nome: Optional[str],
     cpf: Optional[str],
     cpf_obrigatorio: bool = False,
+    frequencia: Optional[Union[int, float]] = 100,
+    horas_presentes: Optional[int] = None,
+    horas_totais: Optional[int] = None,
+    frequencia_minima: int = 75,
 ) -> ValidacaoAluno:
     """
     Valida e normaliza os dados de um Aluno.
     Quando cpf_obrigatorio=False (padrão flexível), aceita CPF em branco/vazio.
     Se o CPF for fornecido, a validação matemática de 11 dígitos continua obrigatória.
+    Aplica a regra de frequência mínima (padrão 75%).
     Retorna uma instância de ValidacaoAluno com status e mensagens de erro.
     """
     erros: List[str] = []
@@ -157,6 +165,17 @@ def validar_aluno(
         formatado = format_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
         mascarado = mask_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
 
+    # Validação de frequência
+    freq_int = 100
+    if frequencia is not None:
+        try:
+            freq_int = max(0, min(100, int(round(float(frequencia)))))
+        except (ValueError, TypeError):
+            freq_int = 100
+
+        if freq_int < frequencia_minima:
+            erros.append(f"Frequência de {freq_int}% abaixo do mínimo exigido de {frequencia_minima}%.")
+
     return ValidacaoAluno(
         nome=nome_norm,
         cpf=cpf_limpo,
@@ -164,6 +183,9 @@ def validar_aluno(
         cpf_mascarado=mascarado,
         is_valido=len(erros) == 0,
         erros=erros,
+        frequencia=freq_int,
+        horas_presentes=horas_presentes,
+        horas_totais=horas_totais,
     )
 
 

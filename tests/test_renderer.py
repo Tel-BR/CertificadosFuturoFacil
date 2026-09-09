@@ -54,20 +54,26 @@ def test_certificate_pdf_page_count_and_dimensions(sample_registro):
 
 
 def test_certificate_anverso_and_reverso_text_content(sample_registro):
-    """Verifica se os textos obrigatórios estão presentes nas páginas do PDF."""
+    """Verifica se os textos obrigatórios e novos padrões estão presentes nas páginas do PDF."""
     pdf_bytes = generate_certificate_pdf(sample_registro)
     reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
 
     # Página 1: Frente (Anverso)
     page1_text = reader.pages[0].extract_text()
     assert "CERTIFICADO" in page1_text
+    # Subtítulo redundante removido
+    assert "DOCUMENTO OFICIAL DE CONCLUSÃO" not in page1_text
     assert "Marcos Vinícius de Almeida" in page1_text or "MARCOS VINÍCIUS DE ALMEIDA" in page1_text
     assert "Excel Corporativo" in page1_text
     assert "quarenta horas" in page1_text
+    assert "Futuro Fácil" in page1_text
+    assert "frequência" in page1_text
+    assert "Discente" in page1_text
+    assert "Instrutor" in page1_text
+    assert "Carlos Eduardo Silveira" in page1_text
     assert "Decreto" in page1_text
     assert "5.154/2004" in page1_text
     assert "170" in page1_text
-    assert "Carlos Eduardo Silveira" in page1_text
 
     # Página 2: Verso (Reverso)
     page2_text = reader.pages[1].extract_text()
@@ -78,6 +84,56 @@ def test_certificate_anverso_and_reverso_text_content(sample_registro):
     assert "A1B2C3D4" in page2_text
     assert "2.200-2/2001" in page2_text
     assert "Código Civil" in page2_text or "10.406" in page2_text
+
+
+def test_certificate_default_instructor_and_city():
+    """Verifica os valores padrão institucionais: Tel Santana Leite e Goiânia."""
+    registro_default = CertificadoRegistro(
+        id=99,
+        codigo_autenticidade="00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF",
+        aluno_nome="Beatriz Souza",
+        aluno_cpf="12345678901",
+        aluno_cpf_mascarado="***.456.789-**",
+        curso_nome="Introdução à Informática Prática",
+        carga_horaria=20,
+        carga_horaria_extenso="vinte horas",
+        data_inicio="01/08/2026",
+        data_conclusao="05/08/2026",
+        data_emissao="05/08/2026",
+        modalidade="Curso Livre de Capacitação Profissional",
+        instrutor="",  # Vazio -> usa default Tel Santana Leite
+        cidade="",     # Vazio -> usa default Goiânia
+        ementa="Módulo 1: Introdução ao Computador.",
+        livro_numero=1,
+        folha_numero=1,
+        registro_numero=1,
+        frequencia=90,
+    )
+    pdf_bytes = generate_certificate_pdf(registro_default)
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    page1_text = reader.pages[0].extract_text()
+
+    assert "Tel Santana Leite" in page1_text
+    assert "Goiânia" in page1_text
+    assert "Discente" in page1_text
+    assert "Instrutor" in page1_text
+    assert "90% de frequência" in page1_text
+
+
+
+def test_format_date_pt_extenso():
+    """Verifica conversão de datas para extenso formal em português."""
+    from core.renderer import format_date_pt_extenso
+    from datetime import date
+
+    assert format_date_pt_extenso("28/08/2026") == "28 de agosto de 2026"
+    assert format_date_pt_extenso("2026-08-18") == "18 de agosto de 2026"
+    assert format_date_pt_extenso("2026/ago/08") == "8 de agosto de 2026"
+    assert format_date_pt_extenso("18 de dezembro de 2025") == "18 de dezembro de 2025"
+    assert format_date_pt_extenso(date(2026, 1, 15)) == "15 de janeiro de 2026"
+    assert format_date_pt_extenso("") == ""
+    assert format_date_pt_extenso(None) == ""
+
 
 
 def test_signature_toggle_with_and_without_image(tmp_path, sample_registro):

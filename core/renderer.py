@@ -10,6 +10,7 @@ Renderiza anverso e reverso com design contemporâneo de segurança:
 """
 
 from dataclasses import dataclass, field
+from datetime import date, datetime
 import io
 import os
 from pathlib import Path
@@ -118,6 +119,58 @@ def get_font_mono_bold() -> str:
 # Configuração Visual do Renderizador
 # ==============================================================================
 
+MESES_EXTENSO = {
+    1: "janeiro",
+    2: "fevereiro",
+    3: "março",
+    4: "abril",
+    5: "maio",
+    6: "junho",
+    7: "julho",
+    8: "agosto",
+    9: "setembro",
+    10: "outubro",
+    11: "novembro",
+    12: "dezembro",
+}
+
+MESES_SIGLAS = {
+    "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
+    "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+}
+
+
+def format_date_pt_extenso(val: Union[str, datetime, date, None]) -> str:
+    """Formata uma data para extenso formal em português (ex: '18 de agosto de 2026')."""
+    if not val:
+        return ""
+    if isinstance(val, (datetime, date)):
+        return f"{val.day} de {MESES_EXTENSO[val.month]} de {val.year}"
+    val_str = str(val).strip()
+    if " de " in val_str.lower():
+        return val_str
+    # Formato DD/MM/AAAA ou DD-MM-AAAA
+    m = re.match(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$", val_str)
+    if m:
+        dia, mes, ano = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1 <= mes <= 12 and 1 <= dia <= 31:
+            return f"{dia} de {MESES_EXTENSO[mes]} de {ano}"
+    # Formato AAAA-MM-DD ou AAAA/MM/DD
+    m2 = re.match(r"^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$", val_str)
+    if m2:
+        ano, mes, dia = int(m2.group(1)), int(m2.group(2)), int(m2.group(3))
+        if 1 <= mes <= 12 and 1 <= dia <= 31:
+            return f"{dia} de {MESES_EXTENSO[mes]} de {ano}"
+    # Formato AAAA/mmm/DD (ex: 2026/ago/08)
+    m3 = re.match(r"^(\d{4})[/.-]([a-zA-Z]{3})[/.-](\d{1,2})$", val_str)
+    if m3:
+        ano, mes_sigla, dia = int(m3.group(1)), m3.group(2).lower(), int(m3.group(3))
+        mes_num = MESES_SIGLAS.get(mes_sigla)
+        if mes_num and 1 <= dia <= 31:
+            return f"{dia} de {MESES_EXTENSO[mes_num]} de {ano}"
+    return val_str
+
+
 @dataclass
 class CertificateRenderConfig:
     """Parâmetros visuais e institucionais para desenho dos certificados."""
@@ -125,12 +178,17 @@ class CertificateRenderConfig:
     primary_color: str = "#0E7490"  # Petróleo Tech
     secondary_color: str = "#EA580C"  # Coral Solar
     logo_path: Optional[Union[str, Path]] = None
-    signature_image_path: Optional[Union[str, Path]] = None
+    signature_image_path: Optional[Union[str, Path]] = "assets/assinatura.png"
     validation_base_url: str = "https://certificados-futurofacil.streamlit.app/?validar="
     institution_name: str = "FUTUROFÁCIL"
     institution_tagline: str = "CAPACITAÇÃO DIGITAL SOB MEDIDA"
     instructor_title: str = "Instrutor(a) Responsável · Capacitação Digital"
+    instructor_default: str = "Tel Santana Leite"
+    city_default: str = "Goiânia"
+    student_signature_label: str = "Discente"
+    instructor_signature_label: str = "Instrutor"
     margin: float = 24.0
+
 
 
 # ==============================================================================
@@ -361,90 +419,81 @@ def render_anverso(
     # Bloco do Título Editorial
     c.saveState()
     title_x = margin + 42
-    title_y = height - 170
+    title_y = height - 165
 
-    # Subtítulo solene
-    _draw_spaced_text(
-        c,
-        x=title_x,
-        y=title_y + 36,
-        text="DOCUMENTO OFICIAL DE CONCLUSÃO",
-        font_name=get_font_bold(),
-        font_size=11,
-        fill_color=secondary_col,
-        char_space=3.5,
-    )
-
-    # Título CERTIFICADO
-    _draw_spaced_text(
-        c,
-        x=title_x,
-        y=title_y - 6,
-        text="CERTIFICADO",
-        font_name=get_font_light(),
-        font_size=44,
-        fill_color=primary_col,
-        char_space=6.0,
-    )
+    # Título CERTIFICADO (sem tracking forçado)
+    c.setFont(get_font_light(), 46)
+    c.setFillColor(primary_col)
+    c.drawString(title_x, title_y, "CERTIFICADO")
 
     # Linha acento solar abaixo do título
     c.setStrokeColor(secondary_col)
     c.setLineWidth(2.5)
-    c.line(title_x, title_y - 18, title_x + 150, title_y - 18)
+    c.line(title_x, title_y - 12, title_x + 140, title_y - 12)
     c.restoreState()
 
     # Bloco do Texto de Concessão
     c.saveState()
     body_x = margin + 42
-    body_y = height - 260
+    body_y = height - 245
 
     # Frase inicial
-    c.setFont(get_font_regular(), 14)
+    c.setFont(get_font_regular(), 13.5)
     c.setFillColor(colors.HexColor("#64748B"))
-    c.drawString(body_x, body_y, "Certificamos com distinção para os devidos fins que")
+    c.drawString(body_x, body_y, "Certificamos com distinção que")
 
     # Nome do Aluno
-    c.setFont(get_font_black(), 28)
+    c.setFont(get_font_black(), 27)
     c.setFillColor(primary_col)
     nome_exibicao = registro.aluno_nome.upper()
-    c.drawString(body_x, body_y - 36, nome_exibicao)
+    c.drawString(body_x, body_y - 34, nome_exibicao)
 
     # Identificação do CPF e introdução ao curso
     cpf_formatado = format_cpf(registro.aluno_cpf) if registro.aluno_cpf else "não informado"
-    c.setFont(get_font_regular(), 13.5)
+    c.setFont(get_font_regular(), 13)
     c.setFillColor(colors.HexColor("#334155"))
-    c.drawString(body_x, body_y - 64, f"inscrito(a) no CPF sob o nº {cpf_formatado}, concluiu o treinamento prático personalizado de")
+    c.drawString(body_x, body_y - 62, f"inscrito(a) no CPF sob o nº {cpf_formatado}, concluiu o treinamento prático de")
 
     # Nome do Curso
-    c.setFont(get_font_black(), 21)
+    c.setFont(get_font_black(), 20)
     c.setFillColor(secondary_col)
-    c.drawString(body_x, body_y - 94, registro.curso_nome)
+    c.drawString(body_x, body_y - 90, registro.curso_nome)
 
-    # Período e Carga Horária por Extenso
-    periodo_str = (
-        f"no período de {registro.data_inicio} a {registro.data_conclusao}"
-        if registro.data_inicio
-        else f"em {registro.data_conclusao}"
-    )
+    # Período, Carga Horária e Frequência
+    if registro.data_inicio and registro.data_conclusao and registro.data_inicio != registro.data_conclusao:
+        periodo_str = f"no período de {registro.data_inicio} a {registro.data_conclusao}"
+    elif registro.data_conclusao:
+        periodo_str = f"em {registro.data_conclusao}"
+    else:
+        periodo_str = ""
+
     horas_str = f"{registro.carga_horaria} horas ({registro.carga_horaria_extenso})"
+    freq_val = getattr(registro, "frequencia", 100) or 100
+    realizado_prefix = f"realizado pela Futuro Fácil {periodo_str}, " if periodo_str else "realizado pela Futuro Fácil, "
+    linha_conclusao = f"{realizado_prefix}perfazendo carga horária total de {horas_str}, com {freq_val}% de frequência."
+
     c.setFont(get_font_regular(), 12.5)
     c.setFillColor(colors.HexColor("#334155"))
-    c.drawString(body_x, body_y - 120, f"realizado {periodo_str}, perfazendo carga horária total de {horas_str}.")
+    c.drawString(body_x, body_y - 116, linha_conclusao)
 
-    # Data e Cidade de Emissão
-    cidade_data = f"{registro.cidade}, {registro.data_emissao}." if registro.cidade else f"Emitido em {registro.data_emissao}."
-    c.setFont(get_font_bold(), 10)
+    # Cidade e Data de Emissão por extenso
+    cidade_nome = registro.cidade.strip() if (registro.cidade and registro.cidade.strip()) else config.city_default
+    data_raw = registro.data_emissao or registro.data_conclusao or ""
+    data_extenso = format_date_pt_extenso(data_raw)
+    cidade_data = f"{cidade_nome}, {data_extenso}." if data_extenso else f"{cidade_nome}."
+
+    c.setFont(get_font_bold(), 10.5)
     c.setFillColor(primary_col)
     c.drawString(body_x, body_y - 146, cidade_data)
     c.restoreState()
 
     # ==============================================================================
-    # Rodapé: Dupla Assinatura (Aluno Titular e Instrutor Responsável)
+    # Rodapé: Dupla Assinatura (Discente e Instrutor)
     # ==============================================================================
     sig_y = margin + 85
     sig_w = 240
 
-    # Assinatura 1: Aluno(a) Titular
+    # Assinatura 1: Aluno (Discente)
     sig1_x = margin + 50
     c.saveState()
     c.setStrokeColor(primary_col)
@@ -457,17 +506,27 @@ def render_anverso(
 
     c.setFont(get_font_regular(), 8.5)
     c.setFillColor(colors.HexColor("#64748B"))
-    c.drawCentredString(sig1_x + sig_w / 2.0, sig_y - 25, "Assinatura do(a) Aluno(a) Titular")
+    c.drawCentredString(sig1_x + sig_w / 2.0, sig_y - 25, config.student_signature_label)
     c.restoreState()
 
-    # Assinatura 2: Instrutor(a) Responsável / Direção
+    # Assinatura 2: Instrutor (Instrutor)
     sig2_x = width - margin - sig_w - 50
     c.saveState()
 
     if config.signature_image_path and os.path.exists(str(config.signature_image_path)):
         try:
             sig_img = ImageReader(str(config.signature_image_path))
-            c.drawImage(sig_img, sig2_x + 30, sig_y + 4, width=180, height=45, preserveAspectRatio=True, mask="auto")
+            iw, ih = sig_img.getSize()
+            aspect = (iw / ih) if ih > 0 else 1.0
+            target_h = 48.0
+            target_w = target_h * aspect
+            max_w = sig_w - 20.0
+            if target_w > max_w:
+                target_w = max_w
+                target_h = target_w / aspect
+            img_x = sig2_x + (sig_w - target_w) / 2.0
+            img_y = sig_y + 2.0
+            c.drawImage(sig_img, img_x, img_y, width=target_w, height=target_h, preserveAspectRatio=True, mask="auto")
         except Exception:
             pass
 
@@ -477,12 +536,12 @@ def render_anverso(
 
     c.setFont(get_font_black(), 10.5)
     c.setFillColor(primary_col)
-    instrutor_nome = registro.instrutor if registro.instrutor else "Coordenação de Capacitação"
+    instrutor_nome = registro.instrutor.strip() if (registro.instrutor and registro.instrutor.strip()) else config.instructor_default
     c.drawCentredString(sig2_x + sig_w / 2.0, sig_y - 14, instrutor_nome)
 
     c.setFont(get_font_regular(), 8.5)
     c.setFillColor(colors.HexColor("#64748B"))
-    c.drawCentredString(sig2_x + sig_w / 2.0, sig_y - 25, config.instructor_title)
+    c.drawCentredString(sig2_x + sig_w / 2.0, sig_y - 25, config.instructor_signature_label)
     c.restoreState()
 
     # ==============================================================================

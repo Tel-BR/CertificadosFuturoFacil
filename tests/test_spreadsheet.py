@@ -173,3 +173,45 @@ def test_read_and_validate_spreadsheet_with_empty_cpfs(tmp_path: Path):
     assert result_obrigatorio.valid_count == 1
     assert result_obrigatorio.invalid_count == 1
     assert result_obrigatorio.alunos[1].is_valido is False
+
+
+def test_read_and_validate_encounter_columns_and_frequency(tmp_path: Path):
+    """Verifica apuração automática de carga horária e cálculo de frequência com colunas de encontros."""
+    test_file = tmp_path / "alunos_frequencia.xlsx"
+    df = pd.DataFrame(
+        {
+            "Nome": ["Alice Silva", "Bruno Santos", "Carla Dias"],
+            "CPF": ["529.982.247-25", "111.444.777-35", "222.333.444-55"],
+            "(4h) I 2026/ago/08": [True, True, True],
+            "(4h) II 2026/ago/08": [True, True, False],
+            "(2h) 2026/ago/09": [True, False, False],
+        }
+    )
+    df.to_excel(test_file, index=False)
+
+    result = read_and_validate_spreadsheet(test_file)
+    assert result.carga_horaria_calculada == 10  # 4 + 4 + 2 = 10h
+    assert result.data_inicio_calculada == "08/08/2026"
+    assert result.data_fim_calculada == "09/08/2026"
+    assert len(result.encontros_detectados) == 3
+
+    # Alice: 10/10h = 100% -> aprovada
+    assert result.alunos[0].horas_presentes == 10
+    assert result.alunos[0].frequencia == 100
+    assert result.alunos[0].is_valido is True
+
+    # Bruno: 8/10h = 80% (>= 75%) -> aprovado
+    assert result.alunos[1].horas_presentes == 8
+    assert result.alunos[1].frequencia == 80
+    assert result.alunos[1].is_valido is True
+
+    # Carla: 4/10h = 40% (< 75%) -> reprovada por falta
+    assert result.alunos[2].horas_presentes == 4
+    assert result.alunos[2].frequencia == 40
+    assert result.alunos[2].is_valido is False
+    assert any("75%" in err for err in result.alunos[2].erros)
+
+    assert result.is_valid is False  # pois Carla foi reprovada
+    assert result.valid_count == 2
+    assert result.invalid_count == 1
+

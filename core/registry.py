@@ -77,9 +77,10 @@ class CursoMetadata:
     data_inicio: Optional[str] = None
     data_emissao: Optional[str] = None
     modalidade: str = "Curso Livre de Capacitação Profissional"
-    instrutor: str = ""
-    cidade: str = ""
+    instrutor: str = "Tel Santana Leite"
+    cidade: str = "Goiânia"
     ementa: str = ""
+    frequencia_minima: int = 75
 
 
 @dataclass
@@ -104,6 +105,7 @@ class CertificadoRegistro:
     livro_numero: int
     folha_numero: int
     registro_numero: int
+    frequencia: int = 100
     created_at: Optional[str] = None
 
 
@@ -194,10 +196,15 @@ class LivroRegistroManager:
                     livro_numero INTEGER NOT NULL,
                     folha_numero INTEGER NOT NULL,
                     registro_numero INTEGER NOT NULL,
+                    frequencia INTEGER DEFAULT 100,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
                 cursor.execute(schema_sql)
+                try:
+                    cursor.execute("ALTER TABLE registros_certificados ADD COLUMN frequencia INTEGER DEFAULT 100;")
+                except Exception:
+                    pass
                 cursor.execute(
                     "CREATE INDEX IF NOT EXISTS idx_registros_codigo ON registros_certificados(codigo_autenticidade);"
                 )
@@ -319,15 +326,18 @@ class LivroRegistroManager:
                     curr_reg = reg_num
 
                     # Extração de dados do aluno
+                    freq_aluno = 100
                     if isinstance(aluno, ValidacaoAluno):
                         nome_aluno = aluno.nome
                         cpf_limpo = aluno.cpf or ""
                         cpf_mascarado = aluno.cpf_mascarado or "Não informado"
+                        freq_aluno = getattr(aluno, "frequencia", 100)
                     elif isinstance(aluno, dict):
                         nome_aluno = normalize_name(aluno.get("nome", ""))
                         cpf_raw = aluno.get("cpf", "")
                         cpf_limpo = aluno.get("cpf_limpo", "") or aluno.get("cpf", "") or ""
                         cpf_mascarado = aluno.get("cpf_mascarado", "") or (mask_cpf(cpf_raw) if cpf_raw else "Não informado")
+                        freq_aluno = int(aluno.get("frequencia", 100))
                     else:
                         raise ValueError(f"Tipo de aluno inválido para registro: {type(aluno)}")
 
@@ -345,8 +355,8 @@ class LivroRegistroManager:
                         curso_nome, carga_horaria, carga_horaria_extenso,
                         data_inicio, data_conclusao, data_emissao,
                         modalidade, instrutor, cidade, ementa,
-                        livro_numero, folha_numero, registro_numero
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        livro_numero, folha_numero, registro_numero, frequencia
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """
                     if self.is_postgres:
                         insert_sql = insert_sql.replace("?", "%s")
@@ -369,6 +379,7 @@ class LivroRegistroManager:
                         livro,
                         folha,
                         reg_num,
+                        freq_aluno,
                     )
                     cursor.execute(insert_sql, params)
 
@@ -391,6 +402,7 @@ class LivroRegistroManager:
                         livro_numero=livro,
                         folha_numero=folha,
                         registro_numero=reg_num,
+                        frequencia=freq_aluno,
                     )
                     registered.append(registro_obj)
 
@@ -577,6 +589,7 @@ class LivroRegistroManager:
                 livro_numero=int(row["livro_numero"]),
                 folha_numero=int(row["folha_numero"]),
                 registro_numero=int(row["registro_numero"]),
+                frequencia=int(row["frequencia"]) if "frequencia" in row.keys() and row["frequencia"] is not None else 100,
                 created_at=str(row["created_at"]) if row["created_at"] else None,
             )
         else:
@@ -600,5 +613,6 @@ class LivroRegistroManager:
                 livro_numero=int(row[15]),
                 folha_numero=int(row[16]),
                 registro_numero=int(row[17]),
-                created_at=str(row[18]) if len(row) > 18 else None,
+                frequencia=int(row[18]) if len(row) > 19 else 100,
+                created_at=str(row[19]) if len(row) > 19 else (str(row[18]) if len(row) > 18 else None),
             )
