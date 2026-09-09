@@ -23,6 +23,7 @@ from core.validator import (
 )
 
 from core.guilloche import (
+    draw_continuous_l_ribbon,
     draw_guilloche_frame,
     draw_modern_wave_ribbon,
     draw_security_seal,
@@ -65,6 +66,7 @@ __all__ = [
     "normalize_name",
     "validar_aluno",
     "validate_cpf",
+    "draw_continuous_l_ribbon",
     "draw_guilloche_frame",
     "draw_modern_wave_ribbon",
     "draw_security_seal",

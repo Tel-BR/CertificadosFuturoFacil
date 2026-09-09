@@ -174,6 +174,89 @@ def draw_security_seal(
     c.restoreState()
 
 
+def draw_continuous_l_ribbon(
+    c: canvas.Canvas,
+    x_base: float,
+    y_top: float,
+    y_corner: float,
+    x_right: float,
+    radius: float = 28.0,
+    num_waves: int = 6,
+    amplitude: float = 5.0,
+    primary_color: Union[str, colors.Color] = "#0E7490",
+    secondary_color: Union[str, colors.Color] = "#EA580C",
+    line_width: float = 0.35,
+    num_samples: int = 360,
+) -> None:
+    """
+    Desenha uma fita contínua em L de ondas harmônicas micrométricas que contorna
+    suavemente o canto inferior esquerdo sem qualquer cruzamento de linhas.
+    """
+    col_primary = resolve_color(primary_color)
+    col_secondary = resolve_color(secondary_color)
+    c.saveState()
+
+    len_v = y_top - (y_corner + radius)
+    len_arc = (math.pi / 2.0) * radius
+    len_h = x_right - (x_base + radius)
+    total_len = len_v + len_arc + len_h
+
+    if total_len <= 0:
+        c.restoreState()
+        return
+
+    for w_idx in range(num_waves):
+        t_factor = w_idx / max(1, num_waves - 1)
+        line_col = interpolate_color(col_primary, col_secondary, t_factor)
+        c.setStrokeColor(line_col)
+        c.setLineWidth(line_width + 0.25 * (1.0 - t_factor))
+
+        path = c.beginPath()
+        phase = w_idx * 0.35
+        lat_offset = 1.5 + w_idx * 1.8
+
+        for s in range(num_samples + 1):
+            d = (s / num_samples) * total_len
+            frac = s / num_samples
+
+            if d <= len_v:
+                t = d / len_v
+                px_base = x_base
+                py_base = y_top - t * len_v
+                nx, ny = 1.0, 0.0
+            elif d <= len_v + len_arc:
+                arc_d = d - len_v
+                theta = (arc_d / len_arc) * (math.pi / 2.0)
+                ang = math.pi + theta
+                cx = x_base + radius
+                cy = y_corner + radius
+                px_base = cx + radius * math.cos(ang)
+                py_base = cy + radius * math.sin(ang)
+                nx = -math.cos(ang)
+                ny = -math.sin(ang)
+            else:
+                h_d = d - (len_v + len_arc)
+                t = h_d / len_h
+                px_base = (x_base + radius) + t * len_h
+                py_base = y_corner
+                nx, ny = 0.0, 1.0
+
+            envelope = math.sin(math.pi * frac) ** 0.5
+            disp = (amplitude * math.sin(frac * 2.0 * math.pi * 5.0 + phase) * envelope) + lat_offset
+
+            x_pt = px_base + nx * disp
+            y_pt = py_base + ny * disp
+
+            if s == 0:
+                path.moveTo(x_pt, y_pt)
+            else:
+                path.lineTo(x_pt, y_pt)
+
+        c.drawPath(path, stroke=1, fill=0)
+
+    c.restoreState()
+
+
 def draw_guilloche_frame(
     c: canvas.Canvas,
     width: float = 841.89,
@@ -181,18 +264,21 @@ def draw_guilloche_frame(
     margin: float = 24.0,
     primary_color: Union[str, colors.Color] = "#0E7490",
     secondary_color: Union[str, colors.Color] = "#EA580C",
+    include_seal: bool = False,
+    include_microtext: bool = True,
 ) -> None:
     """
     Renderiza a moldura de segurança completa do anverso:
-    - Linhas guia perimétricas de alta precisão.
-    - Fita de ondas harmônicas perimétricas (vertical esquerda e horizontal inferior).
-    - Selo numismático contemporâneo de autenticidade no canto inferior direito.
+    - Linhas guia perimétricas de alta precisão numismática.
+    - Borda de microtexto anti-cópia em tamanho micrométrico (3 pt).
+    - Fita contínua em L de ondas harmônicas contornando o canto suavemente sem cruzamentos.
+    - Suporte opcional ao selo numismático contemporâneo.
     """
     col_primary = resolve_color(primary_color)
     col_secondary = resolve_color(secondary_color)
     c.saveState()
 
-    # Linhas guia perimétricas externas e internas (estilo passaporte moderno)
+    # Linhas guia perimétricas externas e internas
     c.setStrokeColor(col_primary)
     c.setLineWidth(0.65)
     c.rect(margin + 2, margin + 2, width - (margin + 2) * 2, height - (margin + 2) * 2, stroke=1, fill=0)
@@ -201,47 +287,38 @@ def draw_guilloche_frame(
     c.setLineWidth(0.35)
     c.rect(margin + 6, margin + 6, width - (margin + 6) * 2, height - (margin + 6) * 2, stroke=1, fill=0)
 
-    # Fita de ondas harmônicas vertical à esquerda
-    draw_modern_wave_ribbon(
+    # Linha de microtexto de segurança anti-cópia (3.0 pt)
+    if include_microtext:
+        c.setFont("Helvetica", 3.0)
+        c.setFillColor(colors.HexColor("#64748B"))
+        micro_txt = "FUTURO FÁCIL · CAPACITAÇÃO PROFISSIONAL SOB MEDIDA · CERTIFICADO OFICIAL · VALIDADE NACIONAL LEI 9.394/96 E DEC 5.154/2004 · AUTENTICIDADE DIGITAL GARANTIDA · "
+        c.drawString(margin + 12, height - margin - 12, (micro_txt * 4)[:220])
+        c.drawString(margin + 12, margin + 10, (micro_txt * 4)[:220])
+
+    # Fita de ondas harmônicas contínua em L (sem cruzamentos de linhas)
+    draw_continuous_l_ribbon(
         c,
-        x_start=margin + 8,
-        y_start=margin + 10,
-        x_end=margin + 8,
-        y_end=height - margin - 10,
-        num_waves=7,
-        amplitude=14.0,
-        frequency=2.2,
+        x_base=margin + 4,
+        y_top=height - margin - 18,
+        y_corner=margin + 4,
+        x_right=width - margin - 18,
+        radius=28.0,
+        num_waves=6,
+        amplitude=5.0,
         primary_color=col_primary,
         secondary_color=col_secondary,
-        line_width=0.45,
-        orientation="vertical",
     )
 
-    # Fita de ondas harmônicas horizontal inferior
-    draw_modern_wave_ribbon(
-        c,
-        x_start=margin + 10,
-        y_start=margin + 10,
-        x_end=width - margin - 60,
-        y_end=margin + 10,
-        num_waves=5,
-        amplitude=7.0,
-        frequency=3.0,
-        primary_color=col_primary,
-        secondary_color=col_secondary,
-        line_width=0.4,
-        orientation="horizontal",
-    )
-
-    # Selo numismático contemporâneo de segurança no canto inferior direito
-    draw_security_seal(
-        c,
-        cx=width - margin - 42,
-        cy=margin + 42,
-        radius=26.0,
-        primary_color=col_primary,
-        secondary_color=col_secondary,
-        petals=12,
-    )
+    # Selo numismático opcional (se solicitado explicitamente)
+    if include_seal:
+        draw_security_seal(
+            c,
+            cx=width - margin - 42,
+            cy=margin + 42,
+            radius=26.0,
+            primary_color=col_primary,
+            secondary_color=col_secondary,
+            petals=12,
+        )
 
     c.restoreState()

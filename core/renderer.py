@@ -427,62 +427,83 @@ def render_anverso(
         else f"em {registro.data_conclusao}"
     )
     horas_str = f"{registro.carga_horaria} horas ({registro.carga_horaria_extenso})"
-    c.setFont(get_font_regular(), 13)
+    c.setFont(get_font_regular(), 12.5)
     c.setFillColor(colors.HexColor("#334155"))
     c.drawString(body_x, body_y - 120, f"realizado {periodo_str}, perfazendo carga horária total de {horas_str}.")
+
+    # Data e Cidade de Emissão
+    cidade_data = f"{registro.cidade}, {registro.data_emissao}." if registro.cidade else f"Emitido em {registro.data_emissao}."
+    c.setFont(get_font_bold(), 10)
+    c.setFillColor(primary_col)
+    c.drawString(body_x, body_y - 146, cidade_data)
     c.restoreState()
 
-    # Rodapé Esquerdo: Cláusula Legal Resumida e Cidade/Data
+    # ==============================================================================
+    # Rodapé: Dupla Assinatura (Aluno Titular e Instrutor Responsável)
+    # ==============================================================================
+    sig_y = margin + 85
+    sig_w = 240
+
+    # Assinatura 1: Aluno(a) Titular
+    sig1_x = margin + 50
     c.saveState()
-    legal_x = margin + 42
-    legal_y = margin + 82
+    c.setStrokeColor(primary_col)
+    c.setLineWidth(1.0)
+    c.line(sig1_x, sig_y, sig1_x + sig_w, sig_y)
+
+    c.setFont(get_font_black(), 10.5)
+    c.setFillColor(primary_col)
+    c.drawCentredString(sig1_x + sig_w / 2.0, sig_y - 14, nome_exibicao)
 
     c.setFont(get_font_regular(), 8.5)
     c.setFillColor(colors.HexColor("#64748B"))
-    c.drawString(
-        legal_x,
-        legal_y + 24,
-        "Curso livre de capacitação profissional ministrado nos termos dos arts. 170 e 205 da CF/88, art. 42 da Lei nº 9.394/96 e Decreto Federal nº 5.154/2004.",
-    )
-    c.drawString(
-        legal_x,
-        legal_y + 12,
-        "Validade nacional assegurada pelo art. 219 da Lei nº 10.406/2002 (Código Civil) e art. 10, § 2º da MP nº 2.200-2/2001.",
-    )
-
-    cidade_data = f"{registro.cidade}, {registro.data_emissao}." if registro.cidade else f"Emitido em {registro.data_emissao}."
-    c.setFont(get_font_bold(), 10.5)
-    c.setFillColor(primary_col)
-    c.drawString(legal_x, legal_y - 6, cidade_data)
+    c.drawCentredString(sig1_x + sig_w / 2.0, sig_y - 25, "Assinatura do(a) Aluno(a) Titular")
     c.restoreState()
 
-    # Rodapé Direito: Assinatura (Imagem Digitalizada ou Linha em Branco para Caneta)
+    # Assinatura 2: Instrutor(a) Responsável / Direção
+    sig2_x = width - margin - sig_w - 50
     c.saveState()
-    sig_w = 210
-    sig_x = width - margin - sig_w - 75
-    sig_y = margin + 70
 
     if config.signature_image_path and os.path.exists(str(config.signature_image_path)):
         try:
             sig_img = ImageReader(str(config.signature_image_path))
-            c.drawImage(sig_img, sig_x + 15, sig_y + 14, width=180, height=45, preserveAspectRatio=True, mask="auto")
+            c.drawImage(sig_img, sig2_x + 30, sig_y + 4, width=180, height=45, preserveAspectRatio=True, mask="auto")
         except Exception:
             pass
 
-    # Linha para assinatura
     c.setStrokeColor(primary_col)
-    c.setLineWidth(1.2)
-    c.line(sig_x, sig_y + 12, sig_x + sig_w, sig_y + 12)
+    c.setLineWidth(1.0)
+    c.line(sig2_x, sig_y, sig2_x + sig_w, sig_y)
 
-    # Nome do Instrutor e Cargo
-    c.setFont(get_font_black(), 11.5)
+    c.setFont(get_font_black(), 10.5)
     c.setFillColor(primary_col)
     instrutor_nome = registro.instrutor if registro.instrutor else "Coordenação de Capacitação"
-    c.drawCentredString(sig_x + sig_w / 2.0, sig_y - 2, instrutor_nome)
+    c.drawCentredString(sig2_x + sig_w / 2.0, sig_y - 14, instrutor_nome)
 
-    c.setFont(get_font_regular(), 9)
+    c.setFont(get_font_regular(), 8.5)
     c.setFillColor(colors.HexColor("#64748B"))
-    c.drawCentredString(sig_x + sig_w / 2.0, sig_y - 14, config.instructor_title)
+    c.drawCentredString(sig2_x + sig_w / 2.0, sig_y - 25, config.instructor_title)
+    c.restoreState()
+
+    # ==============================================================================
+    # Faixa Inferior: Cláusula Legal Completa
+    # ==============================================================================
+    c.saveState()
+    legal_y = margin + 26
+    legal_x = margin + 36
+
+    c.setFont(get_font_regular(), 7.2)
+    c.setFillColor(colors.HexColor("#64748B"))
+    c.drawString(
+        legal_x,
+        legal_y + 9,
+        "Curso livre de capacitação profissional ministrado nos termos dos arts. 170 e 205 da CF/88, art. 42 da Lei nº 9.394/96 e Decreto Federal nº 5.154/2004.",
+    )
+    c.drawString(
+        legal_x,
+        legal_y,
+        "Validade nacional assegurada pelo art. 219 da Lei nº 10.406/2002 (Código Civil) e art. 10, § 2º da Medida Provisória nº 2.200-2/2001.",
+    )
     c.restoreState()
 
 
