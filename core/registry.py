@@ -53,14 +53,17 @@ def generate_authenticity_code(
     curso_nome: str,
     registro_num: int,
     salt: Optional[str] = None,
+    aluno_nome: Optional[str] = None,
 ) -> str:
     """
     Gera o Código de Autenticidade imutável baseado em hash criptográfico SHA-256
     exclusivo para cada certificado. Retorna uma string hexadecimal de 64 caracteres em maiúsculas.
+    Se o aluno não possuir CPF, utiliza o nome do aluno como identificador.
     """
     nonce = salt if salt is not None else uuid.uuid4().hex
-    clean_cpf = aluno_cpf.replace(".", "").replace("-", "").strip()
-    payload = f"{clean_cpf}|{curso_nome.strip()}|{registro_num}|{nonce}"
+    clean_cpf = aluno_cpf.replace(".", "").replace("-", "").strip() if aluno_cpf else ""
+    identificador = clean_cpf if clean_cpf else (aluno_nome.strip() if aluno_nome else "ALUNO_SEM_CPF")
+    payload = f"{identificador}|{curso_nome.strip()}|{registro_num}|{nonce}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest().upper()
 
 
@@ -318,13 +321,13 @@ class LivroRegistroManager:
                     # Extração de dados do aluno
                     if isinstance(aluno, ValidacaoAluno):
                         nome_aluno = aluno.nome
-                        cpf_limpo = aluno.cpf
-                        cpf_mascarado = aluno.cpf_mascarado
+                        cpf_limpo = aluno.cpf or ""
+                        cpf_mascarado = aluno.cpf_mascarado or "Não informado"
                     elif isinstance(aluno, dict):
                         nome_aluno = normalize_name(aluno.get("nome", ""))
                         cpf_raw = aluno.get("cpf", "")
-                        cpf_limpo = aluno.get("cpf_limpo", "") or aluno.get("cpf", "")
-                        cpf_mascarado = aluno.get("cpf_mascarado", "") or mask_cpf(cpf_raw)
+                        cpf_limpo = aluno.get("cpf_limpo", "") or aluno.get("cpf", "") or ""
+                        cpf_mascarado = aluno.get("cpf_mascarado", "") or (mask_cpf(cpf_raw) if cpf_raw else "Não informado")
                     else:
                         raise ValueError(f"Tipo de aluno inválido para registro: {type(aluno)}")
 
@@ -333,6 +336,7 @@ class LivroRegistroManager:
                         curso_nome=curso.curso_nome,
                         registro_num=reg_num,
                         salt=salt,
+                        aluno_nome=nome_aluno,
                     )
 
                     insert_sql = """
@@ -495,7 +499,7 @@ class LivroRegistroManager:
 
         # População dos registros
         for row_idx, reg in enumerate(registros, start=2):
-            cpf_exibicao = format_cpf(reg.aluno_cpf) if len(reg.aluno_cpf) == 11 else reg.aluno_cpf
+            cpf_exibicao = format_cpf(reg.aluno_cpf) if len(reg.aluno_cpf) == 11 else (reg.aluno_cpf if reg.aluno_cpf else "-")
             row_data = [
                 reg.livro_numero,
                 reg.folha_numero,

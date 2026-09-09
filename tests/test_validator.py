@@ -91,3 +91,19 @@ def test_validar_aluno_failure():
     assert len(result.erros) >= 2
     assert any("Nome" in err for err in result.erros)
     assert any("CPF" in err for err in result.erros)
+
+
+def test_validar_aluno_sem_cpf_aceito_por_padrao():
+    result = validar_aluno("Lucas Silva", "")
+    assert result.is_valido is True
+    assert result.nome == "Lucas Silva"
+    assert result.cpf == ""
+    assert result.cpf_formatado == ""
+    assert result.cpf_mascarado == ""
+    assert result.erros == []
+
+
+def test_validar_aluno_sem_cpf_quando_obrigatorio():
+    result = validar_aluno("Lucas Silva", "", cpf_obrigatorio=True)
+    assert result.is_valido is False
+    assert "CPF do aluno é obrigatório." in result.erros

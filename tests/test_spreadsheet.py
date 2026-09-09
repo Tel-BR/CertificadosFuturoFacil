@@ -144,3 +144,32 @@ def test_read_and_validate_numeric_cpf_handling(tmp_path: Path):
     assert result.alunos[0].is_valido is True
     assert result.alunos[1].cpf == "123"
     assert result.alunos[1].is_valido is False
+
+
+def test_read_and_validate_spreadsheet_with_empty_cpfs(tmp_path: Path):
+    test_file = tmp_path / "alunos_com_sem_cpf.xlsx"
+    df = pd.DataFrame(
+        {
+            "Nome": ["Aluno Com CPF", "Aluno Sem CPF"],
+            "CPF": ["529.982.247-25", ""],
+        }
+    )
+    df.to_excel(test_file, index=False)
+
+    # Por padrão (cpf_obrigatorio=False), ambos são válidos e sem_cpf_count é 1
+    result = read_and_validate_spreadsheet(test_file)
+    assert result.is_valid is True
+    assert result.total_rows == 2
+    assert result.valid_count == 2
+    assert result.invalid_count == 0
+    assert result.sem_cpf_count == 1
+    assert result.alunos[0].cpf == "52998224725"
+    assert result.alunos[1].cpf == ""
+    assert result.alunos[1].is_valido is True
+
+    # Se for exigido CPF obrigatório, a linha sem CPF é reprovada
+    result_obrigatorio = read_and_validate_spreadsheet(test_file, cpf_obrigatorio=True)
+    assert result_obrigatorio.is_valid is False
+    assert result_obrigatorio.valid_count == 1
+    assert result_obrigatorio.invalid_count == 1
+    assert result_obrigatorio.alunos[1].is_valido is False

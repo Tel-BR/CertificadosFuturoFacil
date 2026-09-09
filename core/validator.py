@@ -126,9 +126,15 @@ def normalize_name(name: Optional[str]) -> str:
     return " ".join(normalized_words)
 
 
-def validar_aluno(nome: Optional[str], cpf: Optional[str]) -> ValidacaoAluno:
+def validar_aluno(
+    nome: Optional[str],
+    cpf: Optional[str],
+    cpf_obrigatorio: bool = False,
+) -> ValidacaoAluno:
     """
     Valida e normaliza os dados de um Aluno.
+    Quando cpf_obrigatorio=False (padrão flexível), aceita CPF em branco/vazio.
+    Se o CPF for fornecido, a validação matemática de 11 dígitos continua obrigatória.
     Retorna uma instância de ValidacaoAluno com status e mensagens de erro.
     """
     erros: List[str] = []
@@ -138,12 +144,18 @@ def validar_aluno(nome: Optional[str], cpf: Optional[str]) -> ValidacaoAluno:
         erros.append("Nome do aluno não pode ser vazio.")
 
     cpf_limpo = clean_cpf(cpf)
-    cpf_valido = validate_cpf(cpf_limpo)
-    if not cpf_valido:
-        erros.append("CPF inválido ou com dígitos verificadores incorretos.")
 
-    formatado = format_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
-    mascarado = mask_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
+    if not cpf_limpo:
+        if cpf_obrigatorio:
+            erros.append("CPF do aluno é obrigatório.")
+        formatado = ""
+        mascarado = ""
+    else:
+        cpf_valido = validate_cpf(cpf_limpo)
+        if not cpf_valido:
+            erros.append("CPF inválido ou com dígitos verificadores incorretos.")
+        formatado = format_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
+        mascarado = mask_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
 
     return ValidacaoAluno(
         nome=nome_norm,

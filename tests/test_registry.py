@@ -339,3 +339,46 @@ def test_custom_initial_sequence(tmp_path):
     aluno3 = ValidacaoAluno("Aluno C", "333", "333", "***", True)
     reg3 = manager.register_certificate(aluno3, curso)
     assert (reg3.livro_numero, reg3.folha_numero, reg3.registro_numero) == (4, 1, 301)
+
+
+def test_register_certificate_without_cpf(tmp_path):
+    from core.registry import CursoMetadata, LivroRegistroManager
+
+    db_path = tmp_path / "sem_cpf.db"
+    excel_path = tmp_path / "livro_sem_cpf.xlsx"
+    manager = LivroRegistroManager(
+        db_url_or_path=str(db_path),
+        excel_export_path=str(excel_path),
+    )
+
+    curso = CursoMetadata(
+        curso_nome="Workshop Prático",
+        carga_horaria=8,
+        data_conclusao="10/10/2026",
+    )
+    aluno_sem_cpf = ValidacaoAluno(
+        nome="Mariana Sem CPF",
+        cpf="",
+        cpf_formatado="",
+        cpf_mascarado="",
+        is_valido=True,
+    )
+
+    reg = manager.register_certificate(aluno_sem_cpf, curso)
+    assert reg.aluno_nome == "Mariana Sem CPF"
+    assert reg.aluno_cpf == ""
+    assert reg.aluno_cpf_mascarado == "Não informado"
+    assert len(reg.codigo_autenticidade) == 64
+
+    # Busca por código deve funcionar perfeitamente
+    buscado = manager.get_certificate_by_code(reg.codigo_autenticidade)
+    assert buscado is not None
+    assert buscado.aluno_nome == "Mariana Sem CPF"
+    assert buscado.aluno_cpf_mascarado == "Não informado"
+
+    # Excel exportado deve conter hífen no CPF
+    assert excel_path.exists()
+    wb = openpyxl.load_workbook(str(excel_path))
+    ws = wb.active
+    # Linha 2, coluna 6 (CPF)
+    assert ws.cell(row=2, column=6).value == "-"

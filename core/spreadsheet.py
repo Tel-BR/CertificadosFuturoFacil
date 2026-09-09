@@ -20,6 +20,7 @@ class SpreadsheetValidationResult:
     valid_count: int
     invalid_count: int
     is_valid: bool
+    sem_cpf_count: int = 0
     alunos: List[ValidacaoAluno] = field(default_factory=list)
     global_errors: List[str] = field(default_factory=list)
 
@@ -103,11 +104,13 @@ def _carregar_dataframe(source: Union[str, Path, io.BytesIO, bytes, pd.DataFrame
 
 
 def read_and_validate_spreadsheet(
-    source: Union[str, Path, io.BytesIO, bytes, pd.DataFrame]
+    source: Union[str, Path, io.BytesIO, bytes, pd.DataFrame],
+    cpf_obrigatorio: bool = False,
 ) -> SpreadsheetValidationResult:
     """
     Lê e audita uma planilha (Excel ou CSV), verificando a presença estrita
     e exclusiva das colunas 'Nome' e 'CPF' e validando cada Aluno.
+    Quando cpf_obrigatorio=False, aceita alunos com CPF em branco.
     """
     global_errors: List[str] = []
 
@@ -179,11 +182,12 @@ def read_and_validate_spreadsheet(
         else:
             raw_cpf = ""
 
-        aluno = validar_aluno(raw_name, raw_cpf)
+        aluno = validar_aluno(raw_name, raw_cpf, cpf_obrigatorio=cpf_obrigatorio)
         alunos.append(aluno)
 
     total_rows = len(alunos)
     valid_count = sum(1 for a in alunos if a.is_valido)
+    sem_cpf_count = sum(1 for a in alunos if a.is_valido and not a.cpf)
     invalid_count = total_rows - valid_count
     is_valid = (invalid_count == 0) and (total_rows > 0)
 
@@ -196,6 +200,7 @@ def read_and_validate_spreadsheet(
         valid_count=valid_count,
         invalid_count=invalid_count,
         is_valid=is_valid,
+        sem_cpf_count=sem_cpf_count,
         alunos=alunos,
         global_errors=global_errors,
     )
