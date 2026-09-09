@@ -22,6 +22,24 @@ from core.validator import (
     validate_cpf,
 )
 
+from core.guilloche import (
+    draw_guilloche_frame,
+    draw_modern_wave_ribbon,
+    draw_security_seal,
+    resolve_color,
+)
+from core.renderer import (
+    CertificateRenderConfig,
+    generate_batch_certificates,
+    generate_certificate_pdf,
+    render_anverso,
+    render_reverso,
+)
+from core.consolidator import (
+    consolidate_duplex_pdf,
+    merge_duplex_files,
+)
+
 __all__ = [
     "CertificadoRegistro",
     "CursoMetadata",
@@ -38,4 +56,15 @@ __all__ = [
     "normalize_name",
     "validar_aluno",
     "validate_cpf",
+    "draw_guilloche_frame",
+    "draw_modern_wave_ribbon",
+    "draw_security_seal",
+    "resolve_color",
+    "CertificateRenderConfig",
+    "generate_certificate_pdf",
+    "generate_batch_certificates",
+    "render_anverso",
+    "render_reverso",
+    "consolidate_duplex_pdf",
+    "merge_duplex_files",
 ]
