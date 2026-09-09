@@ -265,13 +265,12 @@ def draw_guilloche_frame(
     primary_color: Union[str, colors.Color] = "#0E7490",
     secondary_color: Union[str, colors.Color] = "#EA580C",
     include_seal: bool = False,
-    include_microtext: bool = True,
+    include_microtext: bool = False,
 ) -> None:
     """
     Renderiza a moldura de segurança completa do anverso:
     - Linhas guia perimétricas de alta precisão numismática.
-    - Borda de microtexto anti-cópia em tamanho micrométrico (3 pt).
-    - Fita contínua em L de ondas harmônicas contornando o canto suavemente sem cruzamentos.
+    - Fita contínua em L de ondas harmônicas iniciando e finalizando encostadas no limite da página (sangria total).
     - Suporte opcional ao selo numismático contemporâneo.
     """
     col_primary = resolve_color(primary_color)
@@ -287,7 +286,7 @@ def draw_guilloche_frame(
     c.setLineWidth(0.35)
     c.rect(margin + 6, margin + 6, width - (margin + 6) * 2, height - (margin + 6) * 2, stroke=1, fill=0)
 
-    # Linha de microtexto de segurança anti-cópia (3.0 pt)
+    # Microtexto anti-cópia opcional (desativado por padrão conforme diretriz estética)
     if include_microtext:
         c.setFont("Helvetica", 3.0)
         c.setFillColor(colors.HexColor("#64748B"))
@@ -295,13 +294,13 @@ def draw_guilloche_frame(
         c.drawString(margin + 12, height - margin - 12, (micro_txt * 4)[:220])
         c.drawString(margin + 12, margin + 10, (micro_txt * 4)[:220])
 
-    # Fita de ondas harmônicas contínua em L (sem cruzamentos de linhas)
+    # Fita de ondas harmônicas contínua em L (iniciando e terminando encostadas no limite da página, pra fora das bordas de sangria)
     draw_continuous_l_ribbon(
         c,
         x_base=margin + 4,
-        y_top=height - margin - 18,
+        y_top=height,
         y_corner=margin + 4,
-        x_right=width - margin - 18,
+        x_right=width,
         radius=28.0,
         num_waves=6,
         amplitude=5.0,
@@ -322,3 +321,4 @@ def draw_guilloche_frame(
         )
 
     c.restoreState()
+

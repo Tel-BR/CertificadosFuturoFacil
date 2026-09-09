@@ -368,10 +368,10 @@ def render_anverso(
     secondary_col = resolve_color(config.secondary_color)
     margin = config.margin
 
-    # Fundo do certificado (suave off-white)
+    # Fundo do certificado (suave off-white com sangria total)
     c.saveState()
     c.setFillColor(colors.HexColor("#FAFCFF"))
-    c.rect(18, 18, width - 36, height - 36, fill=1, stroke=0)
+    c.rect(0, 0, width, height, fill=1, stroke=0)
     c.restoreState()
 
     # Moldura de segurança com fita de guilloché
@@ -582,10 +582,10 @@ def render_reverso(
     secondary_col = resolve_color(config.secondary_color)
     margin = config.margin
 
-    # Fundo suave
+    # Fundo suave (sangria total)
     c.saveState()
     c.setFillColor(colors.HexColor("#FAFCFF"))
-    c.rect(18, 18, width - 36, height - 36, fill=1, stroke=0)
+    c.rect(0, 0, width, height, fill=1, stroke=0)
 
     # Moldura de segurança sutil perimétrica
     c.setStrokeColor(primary_col)
