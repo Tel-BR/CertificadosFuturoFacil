@@ -23,6 +23,7 @@ from core.renderer import (
     CertificateRenderConfig,
     render_anverso,
     render_reverso,
+    save_pdf_bytes,
 )
 
 
@@ -55,15 +56,7 @@ def consolidate_duplex_pdf(
     c.save()
     pdf_bytes = buf.getvalue()
 
-    if output_path_or_buffer is not None:
-        if isinstance(output_path_or_buffer, io.BytesIO):
-            output_path_or_buffer.write(pdf_bytes)
-        else:
-            p = Path(output_path_or_buffer)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(pdf_bytes)
-
-    return pdf_bytes
+    return save_pdf_bytes(pdf_bytes, output_path_or_buffer)
 
 
 def merge_duplex_files(

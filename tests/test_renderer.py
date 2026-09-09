@@ -66,6 +66,7 @@ def test_certificate_anverso_and_reverso_text_content(sample_registro):
     assert "quarenta horas" in page1_text
     assert "Decreto" in page1_text
     assert "5.154/2004" in page1_text
+    assert "170" in page1_text
     assert "Carlos Eduardo Silveira" in page1_text
 
     # Página 2: Verso (Reverso)

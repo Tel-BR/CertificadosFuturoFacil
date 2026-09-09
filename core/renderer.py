@@ -241,29 +241,59 @@ def _draw_logo_or_wordmark(
     c.restoreState()
 
 
-def _draw_qr_code(
+def _build_validation_url(base_url: str, code: str) -> str:
+    """Monta a URL de validação garantindo conformidade com ADR-0002 sem duplicação de parâmetros."""
+    clean_base = base_url.strip()
+    if "validar=" in clean_base:
+        if clean_base.endswith("=") or clean_base.endswith("&"):
+            return f"{clean_base}{code}"
+        return f"{clean_base}&validar={code}"
+    return f"{clean_base.rstrip('/')}/?validar={code}"
+
+
+def _draw_vector_qr_code(
     c: canvas.Canvas,
     x: float,
     y: float,
     size: float,
     url: str,
+    fill_color: Optional[colors.Color] = None,
 ) -> None:
-    """Gera e renderiza um QR Code nítido em alta definição na coordenada informada."""
+    """Renderiza um QR Code 100% vetorial através de módulos diretos no canvas."""
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=10,
-        border=1,
+        box_size=1,
+        border=0,
     )
     qr.add_data(url)
     qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
+    matrix = qr.modules
+    n = len(matrix)
+    box_size = size / max(1, n)
 
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    reader = ImageReader(buf)
-    c.drawImage(reader, x, y, width=size, height=size, mask="auto")
+    c.saveState()
+    c.setFillColor(fill_color if fill_color is not None else colors.black)
+    for r in range(n):
+        for col in range(n):
+            if matrix[r][col]:
+                c.rect(x + col * box_size, y + (n - 1 - r) * box_size, box_size, box_size, fill=1, stroke=0)
+    c.restoreState()
+
+
+def save_pdf_bytes(
+    pdf_bytes: bytes,
+    output_path_or_buffer: Optional[Union[str, Path, io.BytesIO]] = None,
+) -> bytes:
+    """Grava os bytes do PDF em arquivo ou buffer, se fornecido, e retorna os bytes."""
+    if output_path_or_buffer is not None:
+        if isinstance(output_path_or_buffer, io.BytesIO):
+            output_path_or_buffer.write(pdf_bytes)
+        else:
+            p = Path(output_path_or_buffer)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(pdf_bytes)
+    return pdf_bytes
 
 
 # ==============================================================================
@@ -414,7 +444,7 @@ def render_anverso(
     c.drawString(
         legal_x,
         legal_y + 24,
-        "Curso livre de capacitação profissional ministrado nos termos do art. 205 da CF/88, art. 42 da Lei nº 9.394/96 e Decreto Federal nº 5.154/2004.",
+        "Curso livre de capacitação profissional ministrado nos termos dos arts. 170 e 205 da CF/88, art. 42 da Lei nº 9.394/96 e Decreto Federal nº 5.154/2004.",
     )
     c.drawString(
         legal_x,
@@ -634,12 +664,12 @@ def render_reverso(
     c.setFillColor(primary_col)
     c.drawString(col_right_x + 12, card_qr_y + card_qr_h - 17, "VALIDAÇÃO E PROVA ELETRÔNICA")
 
-    # Desenho do QR Code
-    validation_url = f"{config.validation_base_url.rstrip('/')}/?validar={registro.codigo_autenticidade}"
+    # Desenho do QR Code 100% Vetorial
+    validation_url = _build_validation_url(config.validation_base_url, registro.codigo_autenticidade)
     qr_size = 84.0
     qr_x = col_right_x + (col_right_w - qr_size) / 2.0
     qr_y = card_qr_y + card_qr_h - qr_size - 38
-    _draw_qr_code(c, qr_x, qr_y, qr_size, validation_url)
+    _draw_vector_qr_code(c, qr_x, qr_y, qr_size, validation_url, fill_color=primary_col)
 
     # Instrução de escaneamento
     c.setFont(get_font_regular(), 7.5)
@@ -735,15 +765,7 @@ def generate_certificate_pdf(
     c.save()
     pdf_bytes = buf.getvalue()
 
-    if output_path_or_buffer is not None:
-        if isinstance(output_path_or_buffer, io.BytesIO):
-            output_path_or_buffer.write(pdf_bytes)
-        else:
-            p = Path(output_path_or_buffer)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(pdf_bytes)
-
-    return pdf_bytes
+    return save_pdf_bytes(pdf_bytes, output_path_or_buffer)
 
 
 def generate_batch_certificates(
