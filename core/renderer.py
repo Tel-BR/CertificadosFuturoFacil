@@ -521,7 +521,7 @@ def render_reverso(
     # Cabeçalho do Verso
     c.saveState()
     header_x = margin + 30
-    header_y = height - margin - 38
+    header_y = height - margin - 22
 
     c.setFont(get_font_black(), 15)
     c.setFillColor(primary_col)
@@ -529,20 +529,21 @@ def render_reverso(
 
     c.setFont(get_font_bold(), 8.5)
     c.setFillColor(secondary_col)
-    c.drawString(header_x, header_y - 14, "DOCUMENTO VINCULADO AO LIVRO DE REGISTRO DIGITAL · VALIDADE NACIONAL")
+    c.drawString(header_x, header_y - 13, "DOCUMENTO VINCULADO AO LIVRO DE REGISTRO DIGITAL · VALIDADE NACIONAL")
 
     c.setStrokeColor(secondary_col)
     c.setLineWidth(1.5)
-    c.line(header_x, header_y - 20, width - margin - 30, header_y - 20)
+    c.line(header_x, header_y - 19, width - margin - 30, header_y - 19)
     c.restoreState()
 
     # --------------------------------------------------------------------------
     # Coluna Esquerda: Ementa do Curso e Metadados
     # --------------------------------------------------------------------------
+    cards_top_y = header_y - 30
     col_left_x = margin + 30
-    col_left_y = margin + 92
+    col_left_y = margin + 80
     col_left_w = 460
-    col_left_h = height - margin - 150
+    col_left_h = cards_top_y - col_left_y
 
     # Card da Ementa
     c.saveState()
