@@ -39,6 +39,15 @@ from core.consolidator import (
     consolidate_duplex_pdf,
     merge_duplex_files,
 )
+from core.validator_service import (
+    DEFAULT_VALIDATION_BASE_URL,
+    ResultadoValidacaoPublica,
+    ValidadorPublicoService,
+    build_validation_url,
+    generate_qr_code_bytes,
+    generate_qr_code_image,
+    validar_certificado,
+)
 
 __all__ = [
     "CertificadoRegistro",
@@ -67,4 +76,11 @@ __all__ = [
     "render_reverso",
     "consolidate_duplex_pdf",
     "merge_duplex_files",
+    "DEFAULT_VALIDATION_BASE_URL",
+    "ResultadoValidacaoPublica",
+    "ValidadorPublicoService",
+    "build_validation_url",
+    "generate_qr_code_bytes",
+    "generate_qr_code_image",
+    "validar_certificado",
 ]

@@ -38,6 +38,10 @@ from core.guilloche import (
 )
 from core.registry import CertificadoRegistro
 from core.validator import format_cpf
+from core.validator_service import (
+    DEFAULT_VALIDATION_BASE_URL,
+    build_validation_url,
+)
 
 
 # ==============================================================================
@@ -241,14 +245,8 @@ def _draw_logo_or_wordmark(
     c.restoreState()
 
 
-def _build_validation_url(base_url: str, code: str) -> str:
-    """Monta a URL de validação garantindo conformidade com ADR-0002 sem duplicação de parâmetros."""
-    clean_base = base_url.strip()
-    if "validar=" in clean_base:
-        if clean_base.endswith("=") or clean_base.endswith("&"):
-            return f"{clean_base}{code}"
-        return f"{clean_base}&validar={code}"
-    return f"{clean_base.rstrip('/')}/?validar={code}"
+# Reutiliza o construtor unificado de URL de validação
+_build_validation_url = build_validation_url
 
 
 def _draw_vector_qr_code(
