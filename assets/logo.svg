@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64">
+  <!-- ============================================================== -->
+  <!-- FUTURO FÁCIL - Identidade Visual Oficial (Logotipo Vetorial)   -->
+  <!-- Paleta: Petróleo Tech (#0E7490), Coral Solar (#EA580C),       -->
+  <!-- Cinza Corporativo (#64748B), Neutro Slate (#CBD5E1)           -->
+  <!-- ============================================================== -->
+
+  <!-- 1. SÍMBOLO MODULAR (Ícone / Mark) -->
+  <g id="simbolo">
+    <!-- Círculo base de contenção -->
+    <circle id="simbolo-base" cx="32" cy="32" r="26" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <!-- Fita fluida de destravamento / aceleração digital -->
+    <path id="simbolo-fita" d="M 19 44 C 13 32, 21 20, 34 22 C 43 24, 45 38, 35 44" 
+          fill="none" stroke="#0E7490" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Ponto de ignição solar -->
+    <circle id="simbolo-ponto-solar" cx="43" cy="20" r="3.8" fill="#EA580C"/>
+  </g>
+
+  <!-- 2. WORDMARK / NOME INSTITUCIONAL -->
+  <g id="wordmark" style="font-family: 'Montserrat', 'Inter', 'Segoe UI', system-ui, sans-serif;">
+    <!-- FUTURO (Light / Regular em Petróleo Tech) -->
+    <text id="texto-futuro" x="70" y="37" font-size="26" font-weight="300" fill="#0E7490" letter-spacing="-0.2">FUTURO</text>
+    <!-- FÁCIL (ExtraBold / Black em Coral Solar) -->
+    <text id="texto-facil" x="172" y="37" font-size="26" font-weight="900" fill="#EA580C" letter-spacing="-0.2">FÁCIL</text>
+    <!-- TAGLINE INSTITUCIONAL -->
+    <text id="texto-tagline" x="71" y="51" font-size="7.5" font-weight="700" fill="#64748B" letter-spacing="1.8">CAPACITAÇÃO DIGITAL SOB MEDIDA</text>
+  </g>
+</svg>

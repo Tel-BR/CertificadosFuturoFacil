@@ -225,6 +225,7 @@ def _draw_logo_or_wordmark(
 ) -> None:
     """Desenha o logotipo institucional (SVG ou PNG) ou a marca oficial FUTUROFÁCIL."""
     has_custom_logo = False
+    is_full_logo = False
 
     if config.logo_path and os.path.exists(str(config.logo_path)):
         logo_str = str(config.logo_path)
@@ -237,6 +238,8 @@ def _draw_logo_or_wordmark(
                     drawing.scale(scale, scale)
                     renderPDF.draw(drawing, c, x, y)
                     has_custom_logo = True
+                    if (drawing.width * scale) > 60:
+                        is_full_logo = True
             else:
                 img = ImageReader(logo_str)
                 c.drawImage(img, x, y, width=42, height=42, preserveAspectRatio=True, mask="auto")
@@ -273,34 +276,36 @@ def _draw_logo_or_wordmark(
     else:
         offset_x = x + 50
 
-    # Wordmark FUTUROFÁCIL unificado sem espaço
-    c.saveState()
-    font_light = get_font_light()
-    font_black = get_font_black()
-    font_bold = get_font_bold()
+    # Se já renderizou um logotipo horizontal completo via arquivo, não duplica o wordmark
+    if not is_full_logo:
+        # Wordmark FUTUROFÁCIL unificado sem espaço
+        c.saveState()
+        font_light = get_font_light()
+        font_black = get_font_black()
+        font_bold = get_font_bold()
 
-    c.setFont(font_light, 24)
-    c.setFillColor(primary_col)
-    c.drawString(offset_x, y + 18, "FUTURO")
-    futuro_w = c.stringWidth("FUTURO", font_light, 24)
+        c.setFont(font_light, 24)
+        c.setFillColor(primary_col)
+        c.drawString(offset_x, y + 18, "FUTURO")
+        futuro_w = c.stringWidth("FUTURO", font_light, 24)
 
-    c.setFont(font_black, 24)
-    c.setFillColor(secondary_col)
-    c.drawString(offset_x + futuro_w, y + 18, "FÁCIL")
+        c.setFont(font_black, 24)
+        c.setFillColor(secondary_col)
+        c.drawString(offset_x + futuro_w, y + 18, "FÁCIL")
 
-    # Tagline oficial com tracking
-    _draw_spaced_text(
-        c,
-        x=offset_x,
-        y=y + 6,
-        text=config.institution_tagline,
-        font_name=font_bold,
-        font_size=7.5,
-        fill_color=colors.HexColor("#64748B"),
-        char_space=1.8,
-    )
+        # Tagline oficial com tracking
+        _draw_spaced_text(
+            c,
+            x=offset_x,
+            y=y + 6,
+            text=config.institution_tagline,
+            font_name=font_bold,
+            font_size=7.5,
+            fill_color=colors.HexColor("#64748B"),
+            char_space=1.8,
+        )
 
-    c.restoreState()
+        c.restoreState()
 
 
 # Reutiliza o construtor unificado de URL de validação
@@ -620,11 +625,11 @@ def render_reverso(
 
     c.setFont(get_font_black(), 15)
     c.setFillColor(primary_col)
-    c.drawString(header_x, header_y, "REGISTRO E CONTEÚDO PROGRAMÁTICO DETALHADO")
+    c.drawString(header_x, header_y, "EMENTA E REGISTRO DO CURSO")
 
     c.setFont(get_font_bold(), 8.5)
     c.setFillColor(secondary_col)
-    c.drawString(header_x, header_y - 13, "DOCUMENTO VINCULADO AO LIVRO DE REGISTRO DIGITAL · VALIDADE NACIONAL")
+    c.drawString(header_x, header_y - 13, "DOCUMENTO OFICIAL COM VALIDADE NACIONAL · AMPARO LEGAL: LEI Nº 9.394/96")
 
     c.setStrokeColor(secondary_col)
     c.setLineWidth(1.5)
@@ -654,7 +659,7 @@ def render_reverso(
 
     c.setFont(get_font_bold(), 9.5)
     c.setFillColor(primary_col)
-    c.drawString(col_left_x + 14, col_left_y + col_left_h - 18, "EMENTA E CONTEÚDO PROGRAMÁTICO CONVALIDÁVEL")
+    c.drawString(col_left_x + 14, col_left_y + col_left_h - 18, "CONTEÚDO PROGRAMÁTICO E COMPETÊNCIAS")
     c.restoreState()
 
     # Conteúdo da Ementa formatado via Platypus Frame & Paragraph
@@ -722,7 +727,7 @@ def render_reverso(
 
     c.setFont(get_font_bold(), 9)
     c.setFillColor(primary_col)
-    c.drawString(col_right_x + 12, card_book_y + card_book_h - 17, "ASSENTO FORMAL NO LIVRO DIGITAL")
+    c.drawString(col_right_x + 12, card_book_y + card_book_h - 17, "ASSENTO NO LIVRO DE REGISTRO DIGITAL")
 
     # Linhas de Livro, Folha e Registro
     c.setFont(get_font_bold(), 9)
@@ -758,7 +763,7 @@ def render_reverso(
 
     c.setFont(get_font_bold(), 9)
     c.setFillColor(primary_col)
-    c.drawString(col_right_x + 12, card_qr_y + card_qr_h - 17, "VALIDAÇÃO E PROVA ELETRÔNICA")
+    c.drawString(col_right_x + 12, card_qr_y + card_qr_h - 17, "AUTENTICIDADE E VALIDAÇÃO DIGITAL")
 
     # Desenho do QR Code 100% Vetorial
     validation_url = _build_validation_url(config.validation_base_url, registro.codigo_autenticidade)
