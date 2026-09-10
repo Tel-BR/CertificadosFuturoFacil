@@ -1,0 +1,17 @@
+{
+  "razao_social": "Futuro Fácil Capacitação Digital",
+  "nome_fantasia": "Futuro Fácil",
+  "cnpj": "11.222.333/0001-81",
+  "cidade_padrao": "Goiânia",
+  "uf_padrao": "GO",
+  "instrutor_padrao": "Tel Santana Leite",
+  "tagline": "CAPACITAÇÃO DIGITAL SOB MEDIDA",
+  "primary_color": "#0E7490",
+  "secondary_color": "#EA580C",
+  "initial_livro": 1,
+  "initial_folha": 1,
+  "initial_registro": 1,
+  "validation_base_url": "https://certificados-futurofacil.streamlit.app/?validar=",
+  "logo_path": null,
+  "signature_path": "assets/assinatura.png"
+}

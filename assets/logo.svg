@@ -1,28 +1,225 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64">
-  <!-- ============================================================== -->
-  <!-- FUTURO FÁCIL - Identidade Visual Oficial (Logotipo Vetorial)   -->
-  <!-- Paleta: Petróleo Tech (#0E7490), Coral Solar (#EA580C),       -->
-  <!-- Cinza Corporativo (#64748B), Neutro Slate (#CBD5E1)           -->
-  <!-- ============================================================== -->
-
-  <!-- 1. SÍMBOLO MODULAR (Ícone / Mark) -->
-  <g id="simbolo">
-    <!-- Círculo base de contenção -->
-    <circle id="simbolo-base" cx="32" cy="32" r="26" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
-    <!-- Fita fluida de destravamento / aceleração digital -->
-    <path id="simbolo-fita" d="M 19 44 C 13 32, 21 20, 34 22 C 43 24, 45 38, 35 44" 
-          fill="none" stroke="#0E7490" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-    <!-- Ponto de ignição solar -->
-    <circle id="simbolo-ponto-solar" cx="43" cy="20" r="3.8" fill="#EA580C"/>
-  </g>
-
-  <!-- 2. WORDMARK / NOME INSTITUCIONAL -->
-  <g id="wordmark" style="font-family: 'Montserrat', 'Inter', 'Segoe UI', system-ui, sans-serif;">
-    <!-- FUTURO (Light / Regular em Petróleo Tech) -->
-    <text id="texto-futuro" x="70" y="37" font-size="26" font-weight="300" fill="#0E7490" letter-spacing="-0.2">FUTURO</text>
-    <!-- FÁCIL (ExtraBold / Black em Coral Solar) -->
-    <text id="texto-facil" x="172" y="37" font-size="26" font-weight="900" fill="#EA580C" letter-spacing="-0.2">FÁCIL</text>
-    <!-- TAGLINE INSTITUCIONAL -->
-    <text id="texto-tagline" x="71" y="51" font-size="7.5" font-weight="700" fill="#64748B" letter-spacing="1.8">CAPACITAÇÃO DIGITAL SOB MEDIDA</text>
-  </g>
-</svg>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 320 64"
+   width="320"
+   height="64"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="logo.svg"
+   xml:space="preserve"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+   id="defs1"><inkscape:path-effect
+   effect="fillet_chamfer"
+   id="path-effect52"
+   is_visible="true"
+   lpeversion="1"
+   nodesatellites_param="F,0,0,1,0,1.3540857,0,1 @ F,0,0,1,0,1.6220811,0,1 @ F,0,0,1,0,1.376508,0,1 @ F,0,0,1,0,1.5451956,0,1 @ F,0,1,1,0,2.1386372,0,1 @ F,0,0,1,0,2.1386372,0,1"
+   radius="0"
+   unit="px"
+   method="auto"
+   mode="F"
+   chamfer_steps="1"
+   flexible="false"
+   use_knot_distance="true"
+   apply_no_radius="true"
+   apply_with_radius="true"
+   only_selected="false"
+   hide_knots="false" /><inkscape:path-effect
+   effect="powerstroke"
+   message=""
+   id="path-effect41"
+   is_visible="true"
+   lpeversion="1.3"
+   scale_width="1"
+   interpolator_type="CentripetalCatmullRom"
+   interpolator_beta="0.75"
+   start_linecap_type="round"
+   end_linecap_type="round"
+   offset_points="53.690614,3.8221988"
+   linejoin_type="spiro"
+   miter_limit="4"
+   not_jump="true"
+   sort_points="true" /><inkscape:path-effect
+   effect="simplify"
+   id="path-effect40"
+   is_visible="true"
+   lpeversion="1.3"
+   threshold="0.012"
+   steps="1"
+   smooth_angles="0"
+   helper_size="0"
+   simplify_individual_paths="false"
+   simplify_just_coalesce="false"
+   step="1" /><inkscape:path-effect
+   effect="powerstroke"
+   message=""
+   id="path-effect39"
+   is_visible="true"
+   lpeversion="1.3"
+   scale_width="1"
+   interpolator_type="CentripetalCatmullRom"
+   interpolator_beta="0.75"
+   start_linecap_type="round"
+   end_linecap_type="round"
+   offset_points="6.6071285,7.6443976"
+   linejoin_type="spiro"
+   miter_limit="4"
+   not_jump="true"
+   sort_points="true" /><inkscape:path-effect
+   effect="simplify"
+   id="path-effect38"
+   is_visible="true"
+   lpeversion="1.3"
+   threshold="0.012"
+   steps="1"
+   smooth_angles="0"
+   helper_size="0"
+   simplify_individual_paths="false"
+   simplify_just_coalesce="false"
+   step="1" /><inkscape:path-effect
+   effect="powerstroke"
+   message=""
+   id="path-effect37"
+   is_visible="true"
+   lpeversion="1.3"
+   scale_width="1"
+   interpolator_type="CentripetalCatmullRom"
+   interpolator_beta="0.75"
+   start_linecap_type="round"
+   end_linecap_type="round"
+   offset_points="8.827751,7.6443976"
+   linejoin_type="spiro"
+   miter_limit="4"
+   not_jump="true"
+   sort_points="true" /><inkscape:path-effect
+   effect="simplify"
+   id="path-effect36"
+   is_visible="true"
+   lpeversion="1.3"
+   threshold="0.012"
+   steps="1"
+   smooth_angles="0"
+   helper_size="0"
+   simplify_individual_paths="false"
+   simplify_just_coalesce="false"
+   step="1" /><inkscape:path-effect
+   effect="powerstroke"
+   message=""
+   id="path-effect35"
+   is_visible="true"
+   lpeversion="1.3"
+   scale_width="1"
+   interpolator_type="CentripetalCatmullRom"
+   interpolator_beta="0.75"
+   start_linecap_type="round"
+   end_linecap_type="round"
+   offset_points="9.4469457,2.7027027"
+   linejoin_type="spiro"
+   miter_limit="4"
+   not_jump="true"
+   sort_points="true" /><inkscape:path-effect
+   effect="simplify"
+   id="path-effect34"
+   is_visible="true"
+   lpeversion="1.3"
+   threshold="0.012"
+   steps="1"
+   smooth_angles="0"
+   helper_size="0"
+   simplify_individual_paths="false"
+   simplify_just_coalesce="false"
+   step="1" /><inkscape:path-effect
+   effect="powerstroke"
+   message=""
+   id="path-effect33"
+   is_visible="true"
+   lpeversion="1.3"
+   scale_width="1"
+   interpolator_type="CentripetalCatmullRom"
+   interpolator_beta="0.75"
+   start_linecap_type="round"
+   end_linecap_type="round"
+   offset_points="8.3573082,2.7027027"
+   linejoin_type="spiro"
+   miter_limit="4"
+   not_jump="true"
+   sort_points="true" /><inkscape:path-effect
+   effect="simplify"
+   id="path-effect32"
+   is_visible="true"
+   lpeversion="1.3"
+   threshold="0.012"
+   steps="1"
+   smooth_angles="0"
+   helper_size="0"
+   simplify_individual_paths="false"
+   simplify_just_coalesce="false"
+   step="1" /><inkscape:path-effect
+   effect="powerstroke"
+   message=""
+   id="path-effect31"
+   is_visible="true"
+   lpeversion="1.3"
+   scale_width="1"
+   interpolator_type="CentripetalCatmullRom"
+   interpolator_beta="0.75"
+   start_linecap_type="round"
+   end_linecap_type="round"
+   offset_points="10.64952,2.7027027"
+   linejoin_type="spiro"
+   miter_limit="4"
+   not_jump="true"
+   sort_points="true" /><inkscape:path-effect
+   effect="simplify"
+   id="path-effect30"
+   is_visible="true"
+   lpeversion="1.3"
+   threshold="0.012"
+   steps="1"
+   smooth_angles="0"
+   helper_size="0"
+   simplify_individual_paths="false"
+   simplify_just_coalesce="false"
+   step="1" />
+        
+        
+    
+            
+        </defs><sodipodi:namedview
+   id="namedview1"
+   pagecolor="#ffffff"
+   bordercolor="#000000"
+   borderopacity="0.25"
+   inkscape:showpageshadow="2"
+   inkscape:pageopacity="0.0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#d1d1d1"
+   inkscape:zoom="1.3875"
+   inkscape:cx="41.081081"
+   inkscape:cy="6.8468468"
+   inkscape:window-width="1920"
+   inkscape:window-height="1009"
+   inkscape:window-x="-8"
+   inkscape:window-y="279"
+   inkscape:window-maximized="1"
+   inkscape:current-layer="svg1" />
+    
+<!-- ============================================================== --><!-- FUTURO FÁCIL - Identidade Visual Oficial (Logotipo Vetorial)   --><!-- Paleta: Petróleo Tech (#0E7490), Coral Solar (#EA580C),       --><!-- Cinza Corporativo (#64748B), Neutro Slate (#CBD5E1)           --><!-- ============================================================== --><!-- 1. SÍMBOLO MODULAR (Ícone / Mark) --><!-- 2. WORDMARK / NOME INSTITUCIONAL --><g
+   id="g1"
+   transform="matrix(2.4387312,0,0,2.4387312,-880.71247,-737.28069)"><g
+     id="g65"
+     transform="matrix(0.2891533,0,0,0.2891533,580.95902,385.09707)"><path
+       style="font-weight:600;font-size:26px;font-family:MuseoModerno;-inkscape-font-specification:'MuseoModerno Semi-Bold';letter-spacing:-0.2;fill:#0e7490"
+       d="m -720.51108,-319.62582 v -10.218 h -2.314 v -3.042 h 2.314 v -1.95 q 0,-1.768 0.988,-2.756 1.014,-1.014 2.782,-1.014 h 3.77 v 3.042 h -3.146 q -0.338,0 -0.598,0.234 -0.234,0.234 -0.234,0.598 v 1.846 h 3.406 v 3.042 h -3.406 v 10.218 z m 15.24399,0.312 q -2.028,0 -3.484,-0.806 -1.456,-0.806 -2.236,-2.158 -0.754,-1.352 -0.754,-2.99 v -7.618 h 3.562 v 7.618 q 0,0.806 0.39,1.482 0.39,0.65 1.04,1.04 0.676,0.39 1.482,0.39 0.806,0 1.456,-0.39 0.676,-0.39 1.066,-1.04 0.39,-0.676 0.39,-1.482 v -7.618 h 3.562 v 7.618 q 0,1.638 -0.78,2.99 -0.754,1.352 -2.21,2.158 -1.43,0.806 -3.484,0.806 z m 14.25601,-0.312 q -1.768,0 -2.782,-1.014 -0.988,-1.014 -0.988,-2.756 v -12.818 h 3.562 v 12.714 q 0,0.338 0.234,0.598 0.26,0.234 0.598,0.234 h 2.886 v 3.042 z m -6.032,-10.218 v -3.042 h 9.542 v 3.042 z m 18.54599,10.53 q -2.028,0 -3.484,-0.806 -1.456,-0.806 -2.236,-2.158 -0.754,-1.352 -0.754,-2.99 v -7.618 h 3.562 v 7.618 q 0,0.806 0.39,1.482 0.39,0.65 1.04,1.04 0.676,0.39 1.482,0.39 0.806,0 1.456,-0.39 0.676,-0.39 1.066,-1.04 0.39,-0.676 0.39,-1.482 v -7.618 h 3.562 v 7.618 q 0,1.638 -0.78,2.99 -0.754,1.352 -2.21,2.158 -1.43,0.806 -3.484,0.806 z m 9.52401,-0.312 v -9.49 q 0,-1.768 0.988,-2.756 1.014,-1.014 2.782,-1.014 h 3.666 v 3.042 h -3.042 q -0.338,0 -0.598,0.234 -0.234,0.234 -0.234,0.598 v 9.386 z m 15.55602,0.312 q -2.054,0 -3.666,-0.91 -1.612,-0.936 -2.548,-2.496 -0.936,-1.586 -0.936,-3.536 0,-1.95 0.936,-3.51 0.936,-1.586 2.548,-2.496 1.612,-0.936 3.666,-0.936 2.054,0 3.666,0.936 1.612,0.91 2.548,2.496 0.936,1.56 0.936,3.51 0,1.95 -0.936,3.536 -0.936,1.56 -2.548,2.496 -1.612,0.91 -3.666,0.91 z m 0,-3.042 q 1.092,0 1.872,-0.52 0.806,-0.52 1.222,-1.404 0.442,-0.884 0.442,-1.976 0,-1.092 -0.442,-1.976 -0.416,-0.884 -1.222,-1.404 -0.78,-0.52 -1.872,-0.52 -1.092,0 -1.898,0.52 -0.78,0.52 -1.222,1.404 -0.416,0.884 -0.416,1.976 0,1.092 0.416,1.976 0.442,0.884 1.222,1.404 0.806,0.52 1.898,0.52 z"
+       id="text1"
+       transform="matrix(3.4583731,0,0,3.4583731,1745.8366,898.64702)"
+       aria-label="futuro" /><path
+       style="font-weight:600;font-size:26px;font-family:MuseoModerno;-inkscape-font-specification:'MuseoModerno Semi-Bold';letter-spacing:-0.2;fill:#ea580c"
+       d="m -640.84726,-319.62582 v -10.218 h -2.314 v -3.042 h 2.314 v -1.95 q 0,-1.768 0.988,-2.756 1.014,-1.014 2.782,-1.014 h 3.77 v 3.042 h -3.146 q -0.338,0 -0.598,0.234 -0.234,0.234 -0.234,0.598 v 1.846 h 3.406 v 3.042 h -3.406 v 10.218 z m 13.99604,0.312 q -1.82,0 -3.172,-0.936 -1.352,-0.936 -2.106,-2.496 -0.728,-1.586 -0.728,-3.484 0,-1.95 0.832,-3.536 0.858,-1.586 2.444,-2.496 1.586,-0.936 3.796,-0.936 2.236,0 3.77,0.936 1.534,0.936 2.34,2.522 0.806,1.586 0.806,3.51 v 6.604 h -3.562 v -2.21 h -0.052 q -0.39,0.702 -0.988,1.274 -0.572,0.572 -1.404,0.91 -0.832,0.338 -1.976,0.338 z m 1.014,-3.042 q 1.04,0 1.794,-0.52 0.754,-0.52 1.144,-1.404 0.416,-0.91 0.416,-2.002 0,-1.092 -0.416,-1.95 -0.39,-0.884 -1.144,-1.404 -0.754,-0.52 -1.794,-0.52 -1.066,0 -1.846,0.52 -0.754,0.52 -1.17,1.404 -0.39,0.858 -0.39,1.95 0,1.092 0.39,2.002 0.416,0.884 1.17,1.404 0.78,0.52 1.846,0.52 z m -1.586,-12.272 2.184,-3.198 h 3.354 l -2.184,3.198 z m 18.10401,15.002 q -2.054,0 -3.666,-0.884 -1.612,-0.884 -2.548,-2.366 -0.936,-1.508 -0.936,-3.38 0,-1.872 0.936,-3.354 0.936,-1.508 2.548,-2.392 1.612,-0.884 3.666,-0.884 h 1.664 v 3.042 h -1.664 q -1.092,0 -1.898,0.468 -0.78,0.468 -1.222,1.3 -0.416,0.806 -0.416,1.82 0,1.014 0.416,1.846 0.442,0.806 1.222,1.274 0.806,0.468 1.898,0.468 h 1.664 v 3.042 z m 3.93398,0 v -13.26 h 3.588 v 13.26 z m 1.794,-14.846 q -0.91,0 -1.586,-0.65 -0.65,-0.676 -0.65,-1.586 0,-0.91 0.65,-1.56 0.676,-0.676 1.586,-0.676 0.91,0 1.56,0.676 0.676,0.65 0.676,1.56 0,0.91 -0.676,1.586 -0.65,0.65 -1.56,0.65 z m 4.94801,14.846 v -18.98 h 3.562 v 18.98 z"
+       id="text2"
+       transform="matrix(3.4583731,0,0,3.4583731,1745.8366,898.64702)"
+       aria-label="fácil" /></g></g></svg>
