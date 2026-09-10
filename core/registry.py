@@ -21,7 +21,7 @@ import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from core.validator import ValidacaoAluno, format_cpf, mask_cpf, normalize_name, validar_aluno
+from core.validator import ValidacaoAluno, clean_cpf, format_cpf, mask_cpf, normalize_name, validar_aluno
 
 
 def formatar_carga_horaria_extenso(horas: int) -> str:
@@ -451,6 +451,99 @@ class LivroRegistroManager:
             return [self._row_to_record(r) for r in rows]
         finally:
             conn.close()
+
+    def update_certificate(
+        self,
+        codigo_autenticidade: str,
+        novo_nome: Optional[str] = None,
+        novo_cpf: Optional[str] = None,
+    ) -> CertificadoRegistro:
+        """
+        Atualiza dados cadastrais de um certificado existente (retificação de nome ou CPF).
+        Revalida matematicamente os dados e atualiza a planilha mestre Excel se configurado.
+        """
+        reg = self.get_certificate_by_code(codigo_autenticidade)
+        if reg is None:
+            raise ValueError(f"Certificado não encontrado para o código: {codigo_autenticidade}")
+
+        aluno_nome_final = reg.aluno_nome
+        if novo_nome is not None:
+            norm_nome = normalize_name(novo_nome)
+            if not norm_nome or len(norm_nome.split()) < 2:
+                raise ValueError("Nome do aluno deve conter nome e sobrenome (mínimo de duas palavras).")
+            aluno_nome_final = norm_nome
+
+        aluno_cpf_final = reg.aluno_cpf
+        aluno_cpf_mascarado_final = reg.aluno_cpf_mascarado
+        if novo_cpf is not None:
+            cpf_limpo = clean_cpf(novo_cpf)
+            if cpf_limpo:
+                from core.validator import validate_cpf
+                if not validate_cpf(cpf_limpo):
+                    raise ValueError(f"CPF inválido ou com dígitos verificadores incorretos: {novo_cpf}")
+                aluno_cpf_final = cpf_limpo
+                aluno_cpf_mascarado_final = mask_cpf(cpf_limpo)
+            else:
+                aluno_cpf_final = ""
+                aluno_cpf_mascarado_final = "Não informado"
+
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                query = """
+                UPDATE registros_certificados
+                SET aluno_nome = ?, aluno_cpf = ?, aluno_cpf_mascarado = ?
+                WHERE UPPER(codigo_autenticidade) = ?
+                """
+                if self.is_postgres:
+                    query = query.replace("?", "%s")
+                cursor.execute(
+                    query,
+                    (aluno_nome_final, aluno_cpf_final, aluno_cpf_mascarado_final, reg.codigo_autenticidade.upper()),
+                )
+        finally:
+            conn.close()
+
+        if self.excel_export_path:
+            self.export_to_excel(self.excel_export_path)
+
+        updated = self.get_certificate_by_code(codigo_autenticidade)
+        assert updated is not None
+        return updated
+
+    def reset_database(
+        self,
+        initial_livro: Optional[int] = None,
+        initial_folha: Optional[int] = None,
+        initial_registro: Optional[int] = None,
+    ) -> None:
+        """
+        Limpa todos os registros do banco de dados (para reset de testes)
+        e opcionalmente reconfigura o ponto de partida numérico do Livro.
+        """
+        if initial_livro is not None:
+            self.initial_livro = max(1, int(initial_livro))
+        if initial_folha is not None:
+            self.initial_folha = max(1, int(initial_folha))
+        if initial_registro is not None:
+            self.initial_registro = max(1, int(initial_registro))
+
+        conn = self._get_connection()
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM registros_certificados")
+                if not self.is_postgres:
+                    try:
+                        cursor.execute("DELETE FROM sqlite_sequence WHERE name='registros_certificados'")
+                    except Exception:
+                        pass
+        finally:
+            conn.close()
+
+        if self.excel_export_path:
+            self.export_to_excel(self.excel_export_path)
 
     def export_to_excel(
         self, destination: Union[str, Path, io.BytesIO] = "livro_registro_certificados.xlsx"

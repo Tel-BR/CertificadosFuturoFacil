@@ -187,6 +187,8 @@ class CertificateRenderConfig:
     city_default: str = "Goiânia"
     student_signature_label: str = "Discente"
     instructor_signature_label: str = "Instrutor"
+    cnpj: Optional[str] = None
+    razao_social: Optional[str] = None
     margin: float = 24.0
 
 
@@ -575,10 +577,11 @@ def render_anverso(
 
     c.setFont(get_font_regular(), 7.2)
     c.setFillColor(colors.HexColor("#64748B"))
+    emissor_info = f" por {config.razao_social} (CNPJ: {config.cnpj})" if (config.cnpj and config.razao_social) else (f" (CNPJ: {config.cnpj})" if config.cnpj else "")
     c.drawString(
         legal_x,
         legal_y + 9,
-        "Curso livre de capacitação profissional ministrado nos termos dos arts. 170 e 205 da CF/88, art. 42 da Lei nº 9.394/96 e Decreto Federal nº 5.154/2004.",
+        f"Curso livre de capacitação profissional ministrado{emissor_info} nos termos dos arts. 170 e 205 da CF/88, art. 42 da Lei nº 9.394/96 e Decreto Federal nº 5.154/2004.",
     )
     c.drawString(
         legal_x,
@@ -811,7 +814,8 @@ def render_reverso(
 
     c.setFont(get_font_bold(), 7.5)
     c.setFillColor(primary_col)
-    c.drawString(legal_full_x, legal_full_y + 48, "FUNDAMENTAÇÃO JURÍDICA INTEGRAL E EFICÁCIA LEGAL:")
+    entidade_prefix = f"Entidade Emissora: {config.razao_social} (CNPJ: {config.cnpj}) · " if config.cnpj else ""
+    c.drawString(legal_full_x, legal_full_y + 48, f"{entidade_prefix}FUNDAMENTAÇÃO JURÍDICA INTEGRAL E EFICÁCIA LEGAL:")
 
     c.setFont(get_font_regular(), 6.8)
     c.setFillColor(colors.HexColor("#475569"))

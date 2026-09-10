@@ -17,6 +17,9 @@ from core.validator import (
     clean_cpf,
     format_cpf,
     mask_cpf,
+    clean_cnpj,
+    validate_cnpj,
+    format_cnpj,
     normalize_name,
     validar_aluno,
     validate_cpf,
@@ -49,8 +52,26 @@ from core.validator_service import (
     generate_qr_code_image,
     validar_certificado,
 )
+from core.config import (
+    InstituicaoConfig,
+    load_instituicao_config,
+    save_instituicao_config,
+    validate_instituicao_config,
+)
+from core.batch_service import (
+    BatchEmissionResult,
+    create_zip_package,
+    emitir_lote_certificados,
+)
 
 __all__ = [
+    "BatchEmissionResult",
+    "create_zip_package",
+    "emitir_lote_certificados",
+    "InstituicaoConfig",
+    "load_instituicao_config",
+    "save_instituicao_config",
+    "validate_instituicao_config",
     "CertificadoRegistro",
     "CursoMetadata",
     "LivroRegistroManager",
@@ -63,6 +84,9 @@ __all__ = [
     "clean_cpf",
     "format_cpf",
     "mask_cpf",
+    "clean_cnpj",
+    "validate_cnpj",
+    "format_cnpj",
     "normalize_name",
     "validar_aluno",
     "validate_cpf",

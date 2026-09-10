@@ -127,3 +127,50 @@ def test_validar_aluno_frequencia_minima():
     assert res_100.is_valido is True
     assert res_100.frequencia == 100
 
+
+def test_validar_aluno_nome_incompleto():
+    """Testa rejeição de nomes simples/monônimos sem sobrenome."""
+    res_simples = validar_aluno("Carlos", "529.982.247-25")
+    assert res_simples.is_valido is False
+    assert any("nome e sobrenome" in err.lower() for err in res_simples.erros)
+
+    res_valido = validar_aluno("Carlos Eduardo", "529.982.247-25")
+    assert res_valido.is_valido is True
+    assert res_valido.nome == "Carlos Eduardo"
+
+
+def test_clean_cnpj():
+    from core.validator import clean_cnpj
+    assert clean_cnpj("11.222.333/0001-81") == "11222333000181"
+    assert clean_cnpj(" 11 222 333 / 0001 - 81 ") == "11222333000181"
+    assert clean_cnpj("") == ""
+    assert clean_cnpj(None) == ""
+
+
+def test_validate_cnpj():
+    from core.validator import validate_cnpj
+    # CNPJ válido
+    assert validate_cnpj("11.222.333/0001-81") is True
+    assert validate_cnpj("11222333000181") is True
+
+    # CNPJs com todos os dígitos iguais são inválidos
+    for d in range(10):
+        assert validate_cnpj(str(d) * 14) is False
+
+    # Tamanho inválido
+    assert validate_cnpj("1122233300018") is False
+    assert validate_cnpj("112223330001811") is False
+    assert validate_cnpj("") is False
+    assert validate_cnpj(None) is False
+
+    # Dígitos verificadores incorretos
+    assert validate_cnpj("11.222.333/0001-82") is False
+    assert validate_cnpj("11.222.333/0001-91") is False
+
+
+def test_format_cnpj():
+    from core.validator import format_cnpj
+    assert format_cnpj("11222333000181") == "11.222.333/0001-81"
+    assert format_cnpj("11.222.333/0001-81") == "11.222.333/0001-81"
+    assert format_cnpj("123") == "123"
+

@@ -382,3 +382,57 @@ def test_register_certificate_without_cpf(tmp_path):
     ws = wb.active
     # Linha 2, coluna 6 (CPF)
     assert ws.cell(row=2, column=6).value == "-"
+
+
+def test_update_certificate(tmp_path):
+    from core.registry import CursoMetadata, LivroRegistroManager
+
+    db_path = tmp_path / "update_test.db"
+    excel_path = tmp_path / "update_test.xlsx"
+    manager = LivroRegistroManager(db_url_or_path=str(db_path), excel_export_path=excel_path)
+
+    curso = CursoMetadata(curso_nome="Teste Retificação", carga_horaria=20, data_conclusao="10/10/2026")
+    aluno = ValidacaoAluno("Nome Errado", "52998224725", "529.982.247-25", "***.982.247-**", True)
+    reg = manager.register_certificate(aluno, curso)
+
+    # Atualiza nome e CPF
+    atualizado = manager.update_certificate(
+        codigo_autenticidade=reg.codigo_autenticidade,
+        novo_nome="Nome Corrigido Silva",
+        novo_cpf="111.444.777-35",
+    )
+
+    assert atualizado.aluno_nome == "Nome Corrigido Silva"
+    assert atualizado.aluno_cpf == "11144477735"
+    assert atualizado.aluno_cpf_mascarado == "***.444.777-**"
+
+    # Confere no banco
+    consultado = manager.get_certificate_by_code(reg.codigo_autenticidade)
+    assert consultado.aluno_nome == "Nome Corrigido Silva"
+    assert consultado.aluno_cpf == "11144477735"
+
+    # Rejeita CPF inválido
+    with pytest.raises(ValueError, match="CPF inválido"):
+        manager.update_certificate(reg.codigo_autenticidade, novo_cpf="111.111.111-11")
+
+    # Rejeita nome sem sobrenome
+    with pytest.raises(ValueError, match="sobrenome"):
+        manager.update_certificate(reg.codigo_autenticidade, novo_nome="ApenasNome")
+
+
+def test_reset_database(tmp_path):
+    from core.registry import CursoMetadata, LivroRegistroManager
+
+    db_path = tmp_path / "reset_test.db"
+    excel_path = tmp_path / "reset_test.xlsx"
+    manager = LivroRegistroManager(db_url_or_path=str(db_path), excel_export_path=excel_path)
+
+    curso = CursoMetadata(curso_nome="Curso Teste", carga_horaria=10, data_conclusao="01/01/2026")
+    aluno = ValidacaoAluno("Aluno Teste", "52998224725", "529.982.247-25", "***.982.247-**", True)
+    manager.register_certificate(aluno, curso)
+    assert len(manager.list_all_certificates()) == 1
+
+    # Reset do banco com redefinição de numeração inicial
+    manager.reset_database(initial_livro=2, initial_folha=10, initial_registro=110)
+    assert len(manager.list_all_certificates()) == 0
+    assert manager.get_next_numbers() == (2, 10, 110)
