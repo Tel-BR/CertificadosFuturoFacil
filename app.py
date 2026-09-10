@@ -420,8 +420,6 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             height=100,
         )
 
-        st.markdown("---")
-
         # PARTE B: Planilha de Alunos, Guia de Regras e Template
         st.markdown("##### Planilha de Alunos e Frequência")
 
@@ -434,50 +432,37 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 - **`Aproveitamento (%)`** *(Opcional / Manual)*: Digite aqui o percentual manual (ex: `85` ou `100%`) caso já queira fixar o aproveitamento diretamente. **Se preenchido, torna-se a fonte da verdade absoluta e nenhum cálculo é realizado.**
                 
                 ### Controle de Encontros e Presenças (Cálculo Automático)
-                - Você pode registrar os encontros individuais da turma em colunas no formato: **`(4h) AAAA/mmm/DD`** *(sem I ou II)*.
-                  - *Exemplo:* `(4h) 2026/set/01`, `(4h) 2026/set/10`
+                - Você pode registrar os encontros individuais da turma em colunas no formato: **`(4h) AAAA/mmm/DD`** ou **`(4h) I AAAA/mmm/DD`**, **`(4h) II AAAA/mmm/DD`**, **`(4h) III AAAA/mmm/DD`**.
+                  - *Exemplos:*
+                    - Encontro regular: `(4h) 2026/set/01`, `(4h) 2026/set/10`
+                    - Múltiplos turnos ou turmas no mesmo período/data: `(4h) I 2026/set/01`, `(4h) II 2026/set/01`, `(4h) III 2026/set/01`
                 - **Como funciona o cálculo de presença:**
                   - Digite **`TRUE`** para presença e **`FALSE`** para falta (também aceita `1`/`0`, `V`/`F`, `Sim`/`Não`).
                   - **Se `Aproveitamento (%)` estiver em branco**, o aproveitamento é calculado automaticamente a partir dos booleanos das colunas de encontros (`horas_presentes / carga_horaria_total * 100`).
                 - Se não houver coluna de aproveitamento nem colunas de encontros, adota-se 100% por padrão.
                 
-                ### Modelos de Planilha
+                ### Modelo de Planilha
                 - Clique no botão abaixo para baixar o modelo **já pré-configurado** com as datas de início e conclusão digitadas acima!
                 """
             )
 
-        col_tmpl1, col_tmpl2 = st.columns([1, 1])
-        with col_tmpl1:
-            # Gera modelo dinâmico com base nas datas da turma
-            tmpl_buffer_dinamico = io.BytesIO()
-            generate_template_spreadsheet(
-                tmpl_buffer_dinamico,
-                data_inicio=data_inicio,
-                data_fim=data_conclusao,
-                horas_por_encontro=4,
-                incluir_exemplo=True,
-            )
-            tmpl_buffer_dinamico.seek(0)
-            st.download_button(
-                label="Baixar Modelo Personalizado (.xlsx)",
-                data=tmpl_buffer_dinamico.getvalue(),
-                file_name="modelo_alunos_turma.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="Planilha com colunas de data (4h por encontro) baseadas no período digitado acima e linha de exemplo.",
-                type="primary",
-            )
-        with col_tmpl2:
-            # Modelo básico estrito
-            tmpl_buffer_basico = io.BytesIO()
-            generate_template_spreadsheet(tmpl_buffer_basico, incluir_exemplo=False)
-            tmpl_buffer_basico.seek(0)
-            st.download_button(
-                label="Baixar Modelo Básico (Apenas Nome e CPF)",
-                data=tmpl_buffer_basico.getvalue(),
-                file_name="modelo_alunos_basico.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="Planilha simples contendo estritamente as colunas Nome e CPF.",
-            )
+        # Gera modelo dinâmico com base nas datas da turma
+        tmpl_buffer = io.BytesIO()
+        generate_template_spreadsheet(
+            tmpl_buffer,
+            data_inicio=data_inicio,
+            data_fim=data_conclusao,
+            horas_por_encontro=4,
+            incluir_exemplo=True,
+        )
+        tmpl_buffer.seek(0)
+        st.download_button(
+            label="Baixar modelo (.xlsx)",
+            data=tmpl_buffer.getvalue(),
+            file_name="modelo_alunos.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Planilha pré-configurada com as colunas de data (4h por encontro) baseadas no período da turma digitado acima e linha de exemplo.",
+        )
 
         col_opt1, col_opt2 = st.columns(2)
         with col_opt1:
@@ -584,6 +569,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
 
         st.markdown("---")
         st.subheader("2. Identidade Visual e Assinatura")
+        st.caption("O logotipo e a assinatura padrão oficiais podem ser cadastrados permanentemente na aba **⚙️ Configurações da Instituição**. Você também pode ajustá-los pontualmente para esta turma abaixo:")
 
         col_cor1, col_cor2 = st.columns(2)
         with col_cor1:
@@ -592,12 +578,17 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             cor_secundaria = st.color_picker("Cor Secundária (Acentos e Selo):", value=inst_cfg.secondary_color)
 
         col_logo, col_sig = st.columns(2)
-        logo_path_final = inst_cfg.logo_path
+        logo_path_final = inst_cfg.logo_path if (inst_cfg.logo_path and Path(inst_cfg.logo_path).exists()) else ("assets/logo.svg" if Path("assets/logo.svg").exists() else None)
         with col_logo:
-            upload_logo = st.file_uploader("Logotipo Institucional (SVG ou PNG):", type=["svg", "png"])
+            st.markdown("**Logotipo do Certificado:**")
+            if logo_path_final and Path(logo_path_final).exists():
+                st.image(logo_path_final, width=160)
+                st.caption(f"Logotipo ativo: `{logo_path_final}`")
+            else:
+                st.caption("Nenhum logotipo padrão cadastrado.")
+            upload_logo = st.file_uploader("Substituir logotipo para esta turma (SVG ou PNG):", type=["svg", "png"])
             if upload_logo is not None:
                 salvar_logo_padrao = st.checkbox("Definir como logotipo padrão institucional", value=False)
-                # Salva arquivo temporário ou em assets
                 assets_dir = Path("assets")
                 assets_dir.mkdir(parents=True, exist_ok=True)
                 ext = upload_logo.name.split(".")[-1].lower()
@@ -609,15 +600,19 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     save_instituicao_config(inst_cfg)
                     st.success("Logotipo salvo como padrão institucional!")
 
-        assinatura_path_final = inst_cfg.signature_path
+        assinatura_path_final = inst_cfg.signature_path if (inst_cfg.signature_path and Path(inst_cfg.signature_path).exists()) else ("assets/assinatura.png" if Path("assets/assinatura.png").exists() else None)
         with col_sig:
+            st.markdown("**Assinatura do Certificado:**")
             tipo_assinatura = st.radio(
                 "Tipo de Assinatura:",
                 options=["Imagem digitalizada (PNG)", "Linha em branco para assinatura à mão"],
-                index=0 if inst_cfg.signature_path and Path(inst_cfg.signature_path).exists() else 1,
+                index=0 if assinatura_path_final and Path(assinatura_path_final).exists() else 1,
             )
             if tipo_assinatura == "Imagem digitalizada (PNG)":
-                upload_sig = st.file_uploader("Upload da Assinatura Digitalizada (PNG transparente):", type=["png"])
+                if assinatura_path_final and Path(assinatura_path_final).exists():
+                    st.image(assinatura_path_final, width=160)
+                    st.caption(f"Assinatura ativa: `{assinatura_path_final}`")
+                upload_sig = st.file_uploader("Substituir assinatura para esta turma (PNG transparente):", type=["png"])
                 if upload_sig is not None:
                     salvar_sig_padrao = st.checkbox("Definir como assinatura padrão institucional", value=False)
                     assets_dir = Path("assets")
@@ -959,6 +954,43 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
 
             conf_tagline = st.text_input("Tagline / Lema Institucional:", value=inst_cfg.tagline)
 
+            st.markdown("#### Identidade Visual Permanente da Instituição")
+            st.write(
+                "Cadastre o logotipo oficial e a assinatura digitalizada padrão da instituição. "
+                "Eles ficam salvos de forma permanente no servidor e são utilizados automaticamente na emissão dos certificados e no cabeçalho público."
+            )
+
+            col_logo_cfg, col_sig_cfg = st.columns(2)
+            with col_logo_cfg:
+                st.markdown("**Logotipo Oficial (SVG ou PNG):**")
+                current_logo = inst_cfg.logo_path if (inst_cfg.logo_path and Path(inst_cfg.logo_path).exists()) else ("assets/logo.svg" if Path("assets/logo.svg").exists() else None)
+                if current_logo and Path(current_logo).exists():
+                    st.image(current_logo, width=160)
+                    st.caption(f"Arquivo ativo: `{current_logo}`")
+                else:
+                    st.caption("Nenhum logotipo cadastrado.")
+                upload_logo_cfg = st.file_uploader(
+                    "Carregar novo logotipo:",
+                    type=["svg", "png"],
+                    key="uploader_logo_tab_config",
+                    help="Recomendado SVG vetorial ou PNG em alta resolução.",
+                )
+
+            with col_sig_cfg:
+                st.markdown("**Assinatura Digitalizada Padrão (PNG transparente):**")
+                current_sig = inst_cfg.signature_path if (inst_cfg.signature_path and Path(inst_cfg.signature_path).exists()) else ("assets/assinatura.png" if Path("assets/assinatura.png").exists() else None)
+                if current_sig and Path(current_sig).exists():
+                    st.image(current_sig, width=160)
+                    st.caption(f"Arquivo ativo: `{current_sig}`")
+                else:
+                    st.caption("Nenhuma assinatura cadastrada.")
+                upload_sig_cfg = st.file_uploader(
+                    "Carregar nova assinatura digitalizada:",
+                    type=["png"],
+                    key="uploader_sig_tab_config",
+                    help="Recomendado arquivo PNG com fundo transparente para sobreposição no PDF.",
+                )
+
             st.markdown("#### Ponto de Partida Numérico do Livro de Registro")
             registros_existentes = manager.list_all_certificates()
             travado = len(registros_existentes) > 0
@@ -976,9 +1008,26 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             else:
                 st.caption("Defina por qual livro, folha e número de registro o primeiro lote emitido começará (ex: Livro 1, Folha 14, Registro 14).")
 
-            btn_salvar_config = st.form_submit_button("💾 Salvar Configurações Institucionais", type="primary")
+            btn_salvar_config = st.form_submit_button("Salvar Configurações Institucionais", type="primary")
 
             if btn_salvar_config:
+                final_logo_path = inst_cfg.logo_path
+                if upload_logo_cfg is not None:
+                    assets_dir = Path("assets")
+                    assets_dir.mkdir(parents=True, exist_ok=True)
+                    ext = upload_logo_cfg.name.split(".")[-1].lower()
+                    dest = assets_dir / f"logo_institucional.{ext}"
+                    dest.write_bytes(upload_logo_cfg.getvalue())
+                    final_logo_path = str(dest)
+
+                final_sig_path = inst_cfg.signature_path
+                if upload_sig_cfg is not None:
+                    assets_dir = Path("assets")
+                    assets_dir.mkdir(parents=True, exist_ok=True)
+                    dest = assets_dir / "assinatura.png"
+                    dest.write_bytes(upload_sig_cfg.getvalue())
+                    final_sig_path = str(dest)
+
                 nova_config = InstituicaoConfig(
                     razao_social=conf_razao.strip(),
                     nome_fantasia=conf_fantasia.strip(),
@@ -993,8 +1042,8 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     initial_folha=int(conf_folha),
                     initial_registro=int(conf_reg),
                     validation_base_url=inst_cfg.validation_base_url,
-                    logo_path=inst_cfg.logo_path,
-                    signature_path=inst_cfg.signature_path,
+                    logo_path=final_logo_path,
+                    signature_path=final_sig_path,
                 )
 
                 erros_validacao = validate_instituicao_config(nova_config)
