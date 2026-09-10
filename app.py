@@ -64,6 +64,7 @@ from core.validator import (
 from core.validator_service import (
     DEFAULT_VALIDATION_BASE_URL,
     ResultadoValidacaoPublica,
+    clean_auth_code,
     validar_certificado,
 )
 
@@ -234,12 +235,25 @@ if modo_selecionado == "🔍 Validação Pública":
             placeholder="Cole o código de 64 caracteres ou escaneie o QR Code...",
             help="O código alfanumérico de 64 caracteres está impresso no verso do certificado.",
         )
+        codigo_limpo = clean_auth_code(codigo_pesquisado)
+        if not codigo_limpo:
+            st.caption("O código de autenticidade possui 64 caracteres hexadecimais (0-9, A-F) e está impresso no verso do certificado.")
+        elif len(codigo_limpo) == 64:
+            if all(c in "0123456789ABCDEF" for c in codigo_limpo):
+                st.caption("🟢 **Código com 64 caracteres** (formato válido, pronto para validação).")
+            else:
+                st.caption("⚠️ **64 caracteres**, mas contém caracteres não hexadecimais inválidos.")
+        elif len(codigo_limpo) < 64:
+            st.caption(f"🟡 **{len(codigo_limpo)}/64 caracteres** (faltam {64 - len(codigo_limpo)} caracteres para completar o código).")
+        else:
+            st.caption(f"🔴 **{len(codigo_limpo)}/64 caracteres** (excesso de {len(codigo_limpo) - 64} caracteres).")
+
     with col_btn:
         st.write("")
         st.write("")
         buscar_clicado = st.button("Verificar Documento", type="primary", use_container_width=True)
 
-    codigo_para_validar = codigo_pesquisado.strip()
+    codigo_para_validar = codigo_limpo
 
     if codigo_para_validar or buscar_clicado:
         if not codigo_para_validar:
@@ -264,18 +278,19 @@ if modo_selecionado == "🔍 Validação Pública":
 
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.markdown("#### 👤 Dados do(a) Aluno(a)")
+                    st.markdown("#### Dados do(a) Aluno(a)")
                     st.write(f"**Nome:** {resultado.aluno_nome}")
-                    st.write(f"**CPF (LGPD):** `{resultado.aluno_cpf_mascarado}`")
-                    st.caption("🔒 O CPF é exibido com mascaramento estrito em conformidade com a LGPD.")
+                    if resultado.aluno_cpf_mascarado and resultado.aluno_cpf_mascarado not in ("-", "Não informado", ""):
+                        st.write(f"**CPF (LGPD):** `{resultado.aluno_cpf_mascarado}`")
+                        st.caption("O CPF é exibido com mascaramento estrito em conformidade com a LGPD.")
 
-                    st.markdown("#### 🏢 Entidade Emissora")
+                    st.markdown("#### Entidade Emissora")
                     st.write(f"**Razão Social:** {inst_cfg.razao_social}")
                     st.write(f"**CNPJ:** `{inst_cfg.cnpj}`")
                     st.write(f"**Cidade/UF:** {resultado.cidade}")
 
                 with col2:
-                    st.markdown("#### 📚 Dados do Curso e Assento")
+                    st.markdown("#### Dados do Curso e Assento")
                     st.write(f"**Curso:** {resultado.curso_nome}")
                     st.write(f"**Carga Horária:** {resultado.carga_horaria} horas ({resultado.carga_horaria_extenso})")
                     st.write(f"**Frequência Apurada:** {resultado.frequencia}%")
@@ -334,7 +349,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         st.stop()
 
     # Botão de Logout na Barra Lateral
-    if st.sidebar.button("🚪 Sair do Painel Admin", use_container_width=True):
+    if st.sidebar.button("Sair do Painel Admin", use_container_width=True):
         st.session_state["admin_authenticated"] = False
         st.rerun()
 
@@ -348,7 +363,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
     st.markdown(f"<div class='sub-header'>{inst_cfg.nome_fantasia.upper()} · {inst_cfg.razao_social} (CNPJ: {inst_cfg.cnpj})</div>", unsafe_allow_html=True)
 
     tab_emissao, tab_livro, tab_config = st.tabs([
-        "🚀 Emissão de Certificados",
+        "🎓 Emissão de Certificados",
         "📖 Livro de Registro Digital",
         "⚙️ Configurações da Instituição",
     ])
@@ -360,7 +375,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         st.subheader("1. Configuração da Turma & Lista de Alunos")
 
         # PARTE A: Dados Cadastrais da Turma e Ementa
-        st.markdown("##### 📌 Dados do Curso e Período Letivo")
+        st.markdown("##### Dados do Curso e Período Letivo")
         col_c1, col_c2 = st.columns([2, 1])
         with col_c1:
             curso_nome = st.text_input(
@@ -408,17 +423,17 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         st.markdown("---")
 
         # PARTE B: Planilha de Alunos, Guia de Regras e Template
-        st.markdown("##### 👥 Planilha de Alunos & Frequência")
+        st.markdown("##### Planilha de Alunos e Frequência")
 
-        with st.expander("📖 Guia Resumido: Regras de Preenchimento da Planilha de Alunos", expanded=False):
+        with st.expander("Guia Resumido: Regras de Preenchimento da Planilha de Alunos", expanded=False):
             st.markdown(
                 """
-                ### 📋 Estrutura de Colunas
+                ### Estrutura de Colunas
                 - **`Nome`** *(Obrigatório)*: Nome completo do aluno (mínimo de duas palavras: nome e sobrenome, ex: `Maria de Souza Silva`). Monônimos são rejeitados para segurança jurídica.
                 - **`CPF`** *(Obrigatório/Opcional)*: CPF com 11 dígitos, com ou sem pontuação (`529.982.247-25` ou `52998224725`). O sistema higieniza e valida matematicamente os dígitos verificadores (Módulo 11).
                 - **`Aproveitamento (%)`** *(Opcional / Manual)*: Digite aqui o percentual manual (ex: `85` ou `100%`) caso já queira fixar o aproveitamento diretamente. **Se preenchido, torna-se a fonte da verdade absoluta e nenhum cálculo é realizado.**
                 
-                ### 🗓️ Controle de Encontros e Presenças (Cálculo Automático)
+                ### Controle de Encontros e Presenças (Cálculo Automático)
                 - Você pode registrar os encontros individuais da turma em colunas no formato: **`(4h) AAAA/mmm/DD`** *(sem I ou II)*.
                   - *Exemplo:* `(4h) 2026/set/01`, `(4h) 2026/set/10`
                 - **Como funciona o cálculo de presença:**
@@ -426,7 +441,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                   - **Se `Aproveitamento (%)` estiver em branco**, o aproveitamento é calculado automaticamente a partir dos booleanos das colunas de encontros (`horas_presentes / carga_horaria_total * 100`).
                 - Se não houver coluna de aproveitamento nem colunas de encontros, adota-se 100% por padrão.
                 
-                ### 💡 Template Inteligente
+                ### Modelos de Planilha
                 - Clique no botão abaixo para baixar o modelo **já pré-configurado** com as datas de início e conclusão digitadas acima!
                 """
             )
@@ -444,7 +459,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             )
             tmpl_buffer_dinamico.seek(0)
             st.download_button(
-                label="📥 Baixar Modelo Personalizado (.xlsx)",
+                label="Baixar Modelo Personalizado (.xlsx)",
                 data=tmpl_buffer_dinamico.getvalue(),
                 file_name="modelo_alunos_turma.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -457,7 +472,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             generate_template_spreadsheet(tmpl_buffer_basico, incluir_exemplo=False)
             tmpl_buffer_basico.seek(0)
             st.download_button(
-                label="📄 Baixar Modelo Básico (Apenas Nome e CPF)",
+                label="Baixar Modelo Básico (Apenas Nome e CPF)",
                 data=tmpl_buffer_basico.getvalue(),
                 file_name="modelo_alunos_basico.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -468,7 +483,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         with col_opt1:
             cpf_obrigatorio = st.checkbox(
                 "Exigir CPF para todos os alunos",
-                value=True,
+                value=False,
                 help="Se desmarcado, aceita alunos com CPF em branco (útil para oficinas livres e alunos isentos).",
             )
         with col_opt2:
@@ -501,7 +516,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
 
             if res_auditoria.encontros_detectados:
                 st.info(
-                    f"🗓️ **Encontros identificados na planilha:** {len(res_auditoria.encontros_detectados)} encontro(s) "
+                    f"Encontros identificados na planilha: {len(res_auditoria.encontros_detectados)} encontro(s) "
                     f"totalizando **{res_auditoria.carga_horaria_calculada}h** "
                     f"({res_auditoria.data_inicio_calculada} a {res_auditoria.data_fim_calculada})."
                 )
@@ -516,19 +531,21 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 for err in res_auditoria.global_errors:
                     st.error(f"Erro na planilha: {err}")
 
-            # Se houver erros, permite edição interativa direta no frontend!
-            if res_auditoria.invalid_count > 0:
-                st.warning(
-                    "⚠️ Foram encontradas linhas com inconsistências (destacadas abaixo). "
-                    "Você pode **corrigir o Nome, o CPF ou a Frequência diretamente na tabela interativa abaixo**, sem precisar refazer a planilha!"
-                )
+            if res_auditoria.total_rows > 0:
+                if res_auditoria.invalid_count > 0:
+                    st.warning(
+                        "Foram encontradas linhas com inconsistências (destacadas abaixo). "
+                        "Você pode **corrigir o Nome, o CPF ou a Frequência diretamente na tabela abaixo**, sem precisar refazer a planilha."
+                    )
+                else:
+                    st.info("Você pode **conferir ou ajustar Nome, CPF e Frequência diretamente na tabela abaixo** antes de gerar os certificados:")
 
-                # Monta DataFrame editável
+                # Tabela interativa SEMPRE editável para conferência prévia total
                 df_edit = pd.DataFrame([
                     {
                         "Linha": idx,
                         "Nome": a.nome,
-                        "CPF": a.cpf,
+                        "CPF": a.cpf if a.cpf else "",
                         "Frequência (%)": a.frequencia,
                         "Status": "✅ Válido" if a.is_valido else "❌ Erro: " + "; ".join(a.erros),
                     }
@@ -557,32 +574,13 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 qtd_invalidos_apos_edicao = sum(1 for a in alunos_revalidados if not a.is_valido)
 
                 if qtd_invalidos_apos_edicao == 0 and len(alunos_revalidados) > 0:
-                    st.success("🎉 Todas as correções foram aplicadas com sucesso! Planilha 100% válida.")
+                    st.success("Todos os alunos foram validados e estão prontos para emissão.")
                     alunos_para_emissao = alunos_revalidados
                     is_lote_valido = True
                 else:
                     st.error(f"Ainda restam {qtd_invalidos_apos_edicao} linha(s) com erros. Corrija na tabela acima para liberar a emissão.")
                     alunos_para_emissao = alunos_revalidados
                     is_lote_valido = False
-
-            elif res_auditoria.total_rows > 0:
-                st.success(f"✅ Todos os {res_auditoria.total_rows} alunos foram validados e estão prontos para emissão!")
-                alunos_para_emissao = res_auditoria.alunos
-                is_lote_valido = True
-
-                # Exibe tabela visual limpa
-                st.dataframe(
-                    pd.DataFrame([
-                        {
-                            "Nome": a.nome,
-                            "CPF (Higienizado)": a.cpf_formatado if a.cpf_formatado else "Não informado",
-                            "Frequência": f"{a.frequencia}%",
-                            "Status": "✅ Válido",
-                        }
-                        for a in res_auditoria.alunos
-                    ]),
-                    use_container_width=True,
-                )
 
         st.markdown("---")
         st.subheader("2. Identidade Visual e Assinatura")
@@ -643,7 +641,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         st.markdown("---")
         st.subheader("3. Pré-Visualização ao Vivo (Frente e Verso)")
 
-        with st.expander("👁️ Clique para visualizar a prévia gráfica em tempo real antes de emitir", expanded=False):
+        with st.expander("Pré-visualização gráfica do certificado (Anverso e Verso)", expanded=False):
             # Prepara registro de amostra
             aluno_preview = alunos_para_emissao[0] if alunos_para_emissao else validar_aluno("Aluno Amostra da Silva", "529.982.247-25")
             nome_curso_prev = curso_nome.strip() if curso_nome.strip() else "Curso Prático de Formação Profissional"
@@ -653,7 +651,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 codigo_autenticidade="0" * 64,
                 aluno_nome=aluno_preview.nome,
                 aluno_cpf=aluno_preview.cpf,
-                aluno_cpf_mascarado=aluno_preview.cpf_mascarado if aluno_preview.cpf_mascarado else "Não informado",
+                aluno_cpf_mascarado=aluno_preview.cpf_mascarado if aluno_preview.cpf_mascarado else "-",
                 curso_nome=nome_curso_prev,
                 carga_horaria=int(carga_horaria),
                 carga_horaria_extenso=formatar_carga_horaria_extenso(int(carga_horaria)),
@@ -702,7 +700,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         # Validação de CNPJ cadastrado
         erros_institucionais = validate_instituicao_config(inst_cfg)
         if erros_institucionais:
-            st.error("⛔ Não é possível emitir certificados sem a instituição estar devidamente configurada:")
+            st.error("Não é possível emitir certificados sem a instituição estar devidamente configurada:")
             for e in erros_institucionais:
                 st.write(f"- {e}")
             st.info("Acesse a aba '⚙️ Configurações da Instituição' para preencher seu CNPJ e dados cadastrais.")
@@ -712,7 +710,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         if not curso_nome.strip():
             st.warning("Preencha o Nome Oficial do Curso para habilitar o botão de emissão.")
 
-        if st.button("🚀 Emitir Lote de Certificados", type="primary", disabled=not pode_emitir, use_container_width=True):
+        if st.button("Emitir Lote de Certificados", type="primary", disabled=not pode_emitir, use_container_width=True):
             with st.spinner("Processando lote de certificados..."):
                 prog_bar = st.progress(0)
                 status_txt = st.empty()
@@ -760,7 +758,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 status_txt.text("Emissão concluída com sucesso!")
                 st.balloons()
 
-                st.success(f"🎉 Lote de {lote_resultado.total_emitidos} certificados emitido com sucesso!")
+                st.success(f"Lote de {lote_resultado.total_emitidos} certificados emitido com sucesso.")
 
                 # Nomenclatura semântica: certificados_{slug}_{data}.zip
                 slug_curso = re.sub(r"[^\w\-]", "_", curso_nome.strip().lower())
@@ -769,7 +767,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 zip_filename = f"certificados_{slug_curso}_{data_slug}.zip"
 
                 st.download_button(
-                    label="📦 Baixar Pacote Completo (.ZIP)",
+                    label="Baixar Pacote Completo (.ZIP)",
                     data=lote_resultado.zip_bytes,
                     file_name=zip_filename,
                     mime="application/zip",
@@ -797,7 +795,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         manager.export_to_excel(excel_mestre_buffer)
         excel_mestre_buffer.seek(0)
         st.download_button(
-            label="📊 Baixar Planilha Consolidada do Livro (.xlsx)",
+            label="Baixar Planilha Consolidada do Livro (.xlsx)",
             data=excel_mestre_buffer.getvalue(),
             file_name="livro_registro_certificados.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -821,7 +819,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     "Folha": f"Fls {r.folha_numero:03d}",
                     "Registro": f"Reg {r.registro_numero:03d}",
                     "Aluno": r.aluno_nome,
-                    "CPF Mascarado": r.aluno_cpf_mascarado,
+                    "CPF": r.aluno_cpf_mascarado,
                     "Curso": r.curso_nome,
                     "Carga Horária": f"{r.carga_horaria}h",
                     "Expedição": r.data_emissao,
@@ -833,13 +831,12 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         else:
             st.info("Nenhum registro encontrado.")
 
-        # Seção de Retificação Pós-Emissão
+        # Seção de Consulta, 2ª Via e Retificação Pós-Emissão
         st.markdown("---")
-        st.subheader("✏️ Retificação Direta de Aluno (Correção Pós-Emissão)")
+        st.subheader("Consulta, 2ª Via e Retificação de Aluno")
         st.write(
-            "Se algum aluno foi cadastrado com CPF ou nome com erro de digitação, você pode "
-            "corrigir os dados diretamente aqui. O banco de dados e o Excel serão sincronizados "
-            "e você poderá baixar o PDF retificado na hora."
+            "Consulte qualquer certificado emitido para baixar uma 2ª via individual em PDF ou "
+            "corrigir eventuais erros de digitação em Nome e CPF com sincronização automática do Livro de Registro."
         )
 
         if registros:
@@ -847,55 +844,70 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 f"Reg {r.registro_numero:03d} - {r.aluno_nome} ({r.curso_nome})": r.codigo_autenticidade
                 for r in registros
             }
-            aluno_selecionado_label = st.selectbox("Selecione o certificado a ser retificado:", options=list(opcoes_alunos.keys()))
+            aluno_selecionado_label = st.selectbox("Selecione o certificado do aluno:", options=list(opcoes_alunos.keys()))
             codigo_selecionado = opcoes_alunos[aluno_selecionado_label]
             reg_atual = manager.get_certificate_by_code(codigo_selecionado)
 
             if reg_atual:
-                with st.form("form_retificacao"):
-                    novo_nome_input = st.text_input("Nome Completo Corrigido:", value=reg_atual.aluno_nome)
-                    novo_cpf_input = st.text_input("CPF Corrigido:", value=reg_atual.aluno_cpf)
+                cfg_render_ind = CertificateRenderConfig(
+                    primary_color=inst_cfg.primary_color,
+                    secondary_color=inst_cfg.secondary_color,
+                    logo_path=inst_cfg.logo_path,
+                    signature_image_path=inst_cfg.signature_path,
+                    validation_base_url=inst_cfg.validation_base_url,
+                    institution_name=inst_cfg.nome_fantasia,
+                    institution_tagline=inst_cfg.tagline,
+                    instructor_default=inst_cfg.instrutor_padrao,
+                    city_default=inst_cfg.cidade_padrao,
+                    cnpj=inst_cfg.cnpj,
+                    razao_social=inst_cfg.razao_social,
+                )
+                pdf_atual_bytes = generate_certificate_pdf(reg_atual, config=cfg_render_ind)
+                slug_aluno = re.sub(r"[^\w\-]", "_", reg_atual.aluno_nome.strip().lower())
 
-                    btn_salvar_retificacao = st.form_submit_button("Salvar Retificação e Atualizar Livro", type="primary")
+                col_dl_ind1, col_dl_ind2 = st.columns([1, 1])
+                with col_dl_ind1:
+                    st.download_button(
+                        label=f"Baixar Certificado em PDF (Reg {reg_atual.registro_numero:03d} - {reg_atual.aluno_nome})",
+                        data=pdf_atual_bytes,
+                        file_name=f"certificado_{reg_atual.registro_numero:04d}_{slug_aluno}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                        help="Gera e baixa o PDF oficial em alta resolução deste certificado individual.",
+                    )
 
-                    if btn_salvar_retificacao:
-                        try:
-                            reg_atualizado = manager.update_certificate(
-                                codigo_autenticidade=codigo_selecionado,
-                                novo_nome=novo_nome_input,
-                                novo_cpf=novo_cpf_input,
-                            )
-                            st.success(f"Registro retificado com sucesso para {reg_atualizado.aluno_nome}!")
+                with st.expander("Corrigir dados cadastrais (Retificação de Nome ou CPF)", expanded=False):
+                    with st.form("form_retificacao"):
+                        novo_nome_input = st.text_input("Nome Completo Corrigido:", value=reg_atual.aluno_nome)
+                        novo_cpf_input = st.text_input("CPF Corrigido:", value=reg_atual.aluno_cpf)
 
-                            # Gera novo PDF individual retificado
-                            cfg_render = CertificateRenderConfig(
-                                primary_color=inst_cfg.primary_color,
-                                secondary_color=inst_cfg.secondary_color,
-                                logo_path=inst_cfg.logo_path,
-                                signature_image_path=inst_cfg.signature_path,
-                                validation_base_url=inst_cfg.validation_base_url,
-                                institution_name=inst_cfg.nome_fantasia,
-                                institution_tagline=inst_cfg.tagline,
-                                instructor_default=inst_cfg.instrutor_padrao,
-                                city_default=inst_cfg.cidade_padrao,
-                                cnpj=inst_cfg.cnpj,
-                                razao_social=inst_cfg.razao_social,
-                            )
-                            pdf_ret_bytes = generate_certificate_pdf(reg_atualizado, config=cfg_render)
+                        btn_salvar_retificacao = st.form_submit_button("Salvar Retificação e Atualizar Livro", type="primary")
 
-                            st.download_button(
-                                label="📥 Baixar PDF Individual Retificado",
-                                data=pdf_ret_bytes,
-                                file_name=f"certificado_{reg_atualizado.registro_numero:04d}_retificado.pdf",
-                                mime="application/pdf",
-                                type="primary",
-                            )
-                        except Exception as ex:
-                            st.error(f"Erro ao retificar registro: {ex}")
+                        if btn_salvar_retificacao:
+                            try:
+                                reg_atualizado = manager.update_certificate(
+                                    codigo_autenticidade=codigo_selecionado,
+                                    novo_nome=novo_nome_input,
+                                    novo_cpf=novo_cpf_input,
+                                )
+                                st.success(f"Registro retificado com sucesso para {reg_atualizado.aluno_nome}!")
+
+                                # Gera novo PDF individual retificado
+                                pdf_ret_bytes = generate_certificate_pdf(reg_atualizado, config=cfg_render_ind)
+                                slug_ret = re.sub(r"[^\w\-]", "_", reg_atualizado.aluno_nome.strip().lower())
+                                st.download_button(
+                                    label="Baixar PDF Individual Retificado",
+                                    data=pdf_ret_bytes,
+                                    file_name=f"certificado_{reg_atualizado.registro_numero:04d}_{slug_ret}_retificado.pdf",
+                                    mime="application/pdf",
+                                    type="primary",
+                                )
+                            except Exception as ex:
+                                st.error(f"Erro ao retificar registro: {ex}")
 
         # Seção de Manutenção e Reset de Testes
         st.markdown("---")
-        with st.expander("⚠️ Zona de Testes / Reset do Banco de Dados", expanded=False):
+        with st.expander("Ambiente de Homologação / Testes (Redefinir Base de Dados)", expanded=False):
             st.warning(
                 "Utilize esta ferramenta para apagar todos os certificados emitidos durante a fase de testes e "
                 "redefinir a numeração inicial do Livro de Registro Digital antes de entrar em produção definitiva."
@@ -909,7 +921,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 reset_reg = st.number_input("Novo Registro Inicial:", min_value=1, value=inst_cfg.initial_registro)
 
             confirmacao_reset = st.checkbox("Confirmo que desejo apagar permanentemente todos os registros de teste atuais.")
-            if st.button("🚨 Resetar Banco de Dados e Redefinir Numeração", type="primary", disabled=not confirmacao_reset):
+            if st.button("Resetar Banco de Dados e Redefinir Numeração", type="primary", disabled=not confirmacao_reset):
                 manager.reset_database(
                     initial_livro=int(reset_livro),
                     initial_folha=int(reset_folha),

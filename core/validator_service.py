@@ -8,6 +8,7 @@ atendendo aos requisitos de ADR-0002 e ADR-0003.
 from dataclasses import dataclass
 import io
 from pathlib import Path
+import re
 from typing import Any, Dict, Optional, Union
 
 from PIL import Image
@@ -21,13 +22,24 @@ DEFAULT_VALIDATION_BASE_URL: str = (
 )
 
 
+def clean_auth_code(codigo: Optional[str]) -> str:
+    """
+    Higieniza o código de autenticidade (SHA-256):
+    Remove todos os espaços em branco, tabulações e quebras de linha (\\n, \\r)
+    decorrentes de cópia do PDF ou digitação, retornando string em caixa alta.
+    """
+    if not codigo:
+        return ""
+    return re.sub(r"\s+", "", str(codigo)).upper()
+
+
 def build_validation_url(base_url: str, code: str) -> str:
     """
     Constrói a URL pública de validação evitando barras extras ou parâmetros duplicados.
     Suporta URLs com e sem '?validar=' ou parâmetros existentes de query string.
     """
     clean_base = str(base_url or "").strip()
-    clean_code = str(code or "").strip().upper()
+    clean_code = clean_auth_code(code)
 
     if "validar=" in clean_base:
         if clean_base.endswith("=") or clean_base.endswith("&"):
@@ -106,7 +118,7 @@ def _extrair_cpf_mascarado(
     if len(digits) == 11:
         return mask_cpf(digits)
 
-    return "Não informado"
+    return "-"
 
 
 @dataclass
@@ -222,14 +234,13 @@ class ValidadorPublicoService:
         Retorna `ResultadoValidacaoPublica` com os dados do curso e assento formal,
         com mascaramento estrito de CPF conforme LGPD.
         """
-        if not codigo or not str(codigo).strip():
+        clean_code = clean_auth_code(codigo)
+        if not clean_code:
             return ResultadoValidacaoPublica(
                 autentico=False,
                 mensagem="Código de autenticidade não informado ou inválido.",
                 codigo_autenticidade="",
             )
-
-        clean_code = str(codigo).strip().upper()
 
         # Validação estrutural de integridade (SHA-256 de 64 caracteres hexadecimais)
         is_hex_sha256 = (

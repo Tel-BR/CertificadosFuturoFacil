@@ -249,3 +249,37 @@ def test_certificate_dynamic_wrapping_and_right_aligned_date():
     assert "Instrutor" in p1_text
     assert "Discente" in p1_text
 
+
+def test_certificate_rendering_without_cpf():
+    """Verifica que aluno sem CPF não imprime 'não informado' e exibe 'concluiu o treinamento prático de'."""
+    registro_sem_cpf = CertificadoRegistro(
+        id=101,
+        codigo_autenticidade="A" * 64,
+        aluno_nome="Carlos Eduardo Pereira",
+        aluno_cpf="",
+        aluno_cpf_mascarado="-",
+        curso_nome="Oficina de Fotografia Digital",
+        carga_horaria=16,
+        carga_horaria_extenso="dezesseis horas",
+        data_inicio="01/09/2026",
+        data_conclusao="05/09/2026",
+        data_emissao="05/09/2026",
+        modalidade="Curso Livre de Capacitação Profissional",
+        instrutor="Prof. Instrutor",
+        cidade="Goiânia",
+        ementa="Fotografia básica.",
+        livro_numero=1,
+        folha_numero=1,
+        registro_numero=1,
+        frequencia=100,
+    )
+    pdf_bytes = generate_certificate_pdf(registro_sem_cpf)
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    page1_text = reader.pages[0].extract_text()
+
+    assert "CARLOS EDUARDO PEREIRA" in page1_text
+    assert "concluiu o treinamento prático de" in page1_text
+    assert "não informado" not in page1_text.lower()
+    assert "inscrito(a) no cpf" not in page1_text.lower()
+
+

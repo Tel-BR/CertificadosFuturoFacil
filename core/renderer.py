@@ -463,10 +463,13 @@ def render_anverso(
     curr_y -= 28
 
     # Identificação do CPF e introdução ao curso
-    cpf_formatado = format_cpf(registro.aluno_cpf) if registro.aluno_cpf else "não informado"
     c.setFont(get_font_regular(), 13)
     c.setFillColor(colors.HexColor("#334155"))
-    c.drawString(body_x, curr_y, f"inscrito(a) no CPF sob o nº {cpf_formatado}, concluiu o treinamento prático de")
+    if registro.aluno_cpf and str(registro.aluno_cpf).strip():
+        cpf_formatado = format_cpf(registro.aluno_cpf)
+        c.drawString(body_x, curr_y, f"inscrito(a) no CPF sob o nº {cpf_formatado}, concluiu o treinamento prático de")
+    else:
+        c.drawString(body_x, curr_y, "concluiu o treinamento prático de")
     curr_y -= 28
 
     # Nome do Curso (quebra dinâmica de linha automática via simpleSplit)

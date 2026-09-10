@@ -330,13 +330,13 @@ class LivroRegistroManager:
                     if isinstance(aluno, ValidacaoAluno):
                         nome_aluno = aluno.nome
                         cpf_limpo = aluno.cpf or ""
-                        cpf_mascarado = aluno.cpf_mascarado or "Não informado"
+                        cpf_mascarado = aluno.cpf_mascarado or "-"
                         freq_aluno = getattr(aluno, "frequencia", 100)
                     elif isinstance(aluno, dict):
                         nome_aluno = normalize_name(aluno.get("nome", ""))
                         cpf_raw = aluno.get("cpf", "")
                         cpf_limpo = aluno.get("cpf_limpo", "") or aluno.get("cpf", "") or ""
-                        cpf_mascarado = aluno.get("cpf_mascarado", "") or (mask_cpf(cpf_raw) if cpf_raw else "Não informado")
+                        cpf_mascarado = aluno.get("cpf_mascarado", "") or (mask_cpf(cpf_raw) if cpf_raw else "-")
                         freq_aluno = int(aluno.get("frequencia", 100))
                     else:
                         raise ValueError(f"Tipo de aluno inválido para registro: {type(aluno)}")
@@ -485,7 +485,7 @@ class LivroRegistroManager:
                 aluno_cpf_mascarado_final = mask_cpf(cpf_limpo)
             else:
                 aluno_cpf_final = ""
-                aluno_cpf_mascarado_final = "Não informado"
+                aluno_cpf_mascarado_final = "-"
 
         conn = self._get_connection()
         try:

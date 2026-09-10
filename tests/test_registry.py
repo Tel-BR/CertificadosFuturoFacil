@@ -367,14 +367,14 @@ def test_register_certificate_without_cpf(tmp_path):
     reg = manager.register_certificate(aluno_sem_cpf, curso)
     assert reg.aluno_nome == "Mariana Sem CPF"
     assert reg.aluno_cpf == ""
-    assert reg.aluno_cpf_mascarado == "Não informado"
+    assert reg.aluno_cpf_mascarado == "-"
     assert len(reg.codigo_autenticidade) == 64
 
     # Busca por código deve funcionar perfeitamente
     buscado = manager.get_certificate_by_code(reg.codigo_autenticidade)
     assert buscado is not None
     assert buscado.aluno_nome == "Mariana Sem CPF"
-    assert buscado.aluno_cpf_mascarado == "Não informado"
+    assert buscado.aluno_cpf_mascarado == "-"
 
     # Excel exportado deve conter hífen no CPF
     assert excel_path.exists()

@@ -144,7 +144,7 @@ def test_validar_codigo_aluno_sem_cpf(tmp_path: Path):
 
     assert resultado.autentico is True
     assert resultado.aluno_nome == "João de Souza"
-    assert resultado.aluno_cpf_mascarado in ("Não informado", "")
+    assert resultado.aluno_cpf_mascarado in ("Não informado", "", "-")
 
 
 def test_validar_codigo_inexistente(tmp_path: Path):
@@ -261,3 +261,49 @@ def test_validar_codigo_espacos_e_minusculas(tmp_path: Path):
     assert resultado.autentico is True
     assert resultado.codigo_autenticidade == codigo.upper()
     assert resultado.aluno_nome == "Carlos Pereira"
+
+
+def test_clean_auth_code_internal_newlines_and_spaces():
+    """Valida que clean_auth_code remove quebras de linha, tabs e espaços internos."""
+    from core.validator_service import clean_auth_code
+
+    code = "A" * 32 + "B" * 32
+    raw_with_newline = "A" * 32 + "\n" + "B" * 32
+    raw_with_spaces = "A" * 32 + "   \r\n\t  " + "B" * 32
+
+    assert clean_auth_code(raw_with_newline) == code
+    assert clean_auth_code(raw_with_spaces) == code
+    assert clean_auth_code(None) == ""
+
+
+def test_validar_codigo_copiado_com_quebra_de_linha_do_pdf(tmp_path: Path):
+    """
+    Testa a validação bem-sucedida de código copiado diretamente do PDF,
+    onde o hash impresso em duas metades gera uma quebra de linha ou espaço intermediário.
+    """
+    db_file = tmp_path / "test_pdf_break.db"
+    manager = LivroRegistroManager(db_url_or_path=str(db_file))
+
+    curso = CursoMetadata(
+        curso_nome="Python para Dados",
+        carga_horaria=40,
+        data_conclusao="10/09/2026",
+    )
+    aluno = ValidacaoAluno(
+        nome="MARIA EDUARDA SILVA",
+        cpf="52998224725",
+        cpf_formatado="529.982.247-25",
+        cpf_mascarado="***.982.247-**",
+        is_valido=True,
+    )
+    reg = manager.register_certificate(aluno, curso)
+    code = reg.codigo_autenticidade
+
+    # Simula seleção com o mouse das duas linhas da caixa de autenticidade do PDF
+    code_copiado_pdf = f"{code[:32]}\n{code[32:]}"
+    resultado = validar_certificado(code_copiado_pdf, manager=manager)
+
+    assert resultado.autentico is True
+    assert resultado.codigo_autenticidade == code.upper()
+    assert resultado.aluno_nome == "Maria Eduarda Silva"
+
