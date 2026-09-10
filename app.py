@@ -357,26 +357,128 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
     # ABA 1: Emissão de Certificados em Lote
     # --------------------------------------------------------------------------
     with tab_emissao:
-        st.subheader("1. Planilha de Alunos da Turma")
+        st.subheader("1. Configuração da Turma & Lista de Alunos")
 
-        col_tmpl, col_cpf_req = st.columns([1, 1])
-        with col_tmpl:
-            # Botão de Download da Planilha Modelo Oficial
-            tmpl_buffer = io.BytesIO()
-            generate_template_spreadsheet(tmpl_buffer)
-            tmpl_buffer.seek(0)
-            st.download_button(
-                label="📥 Baixar Planilha Modelo (.xlsx)",
-                data=tmpl_buffer.getvalue(),
-                file_name="modelo_alunos.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="Planilha Excel pré-formatada contendo apenas as colunas 'Nome' e 'CPF'.",
+        # PARTE A: Dados Cadastrais da Turma e Ementa
+        st.markdown("##### 📌 Dados do Curso e Período Letivo")
+        col_c1, col_c2 = st.columns([2, 1])
+        with col_c1:
+            curso_nome = st.text_input(
+                "Nome Oficial do Curso Livre:*",
+                placeholder="Ex: Formação Prática em Inteligência Artificial e Automação",
             )
-        with col_cpf_req:
+        with col_c2:
+            carga_horaria = st.number_input(
+                "Carga Horária Total (horas):*",
+                min_value=1,
+                max_value=2000,
+                value=40,
+                step=1,
+            )
+            try:
+                extenso_prev = formatar_carga_horaria_extenso(int(carga_horaria))
+                st.caption(f"Por extenso: *{extenso_prev}*")
+            except Exception:
+                pass
+
+        col_d1, col_d2, col_d3 = st.columns(3)
+        with col_d1:
+            data_inicio = st.text_input("Data de Início:", value="01/09/2026", help="Data do 1º encontro (usada no template dinâmico).")
+        with col_d2:
+            data_conclusao = st.text_input("Data de Conclusão:*", value=datetime.now().strftime("%d/%m/%Y"), help="Data do último encontro.")
+        with col_d3:
+            data_emissao = st.text_input("Data de Emissão:*", value=datetime.now().strftime("%d/%m/%Y"))
+
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            modalidade = st.text_input("Modalidade:", value="Curso Livre de Capacitação Profissional")
+        with col_m2:
+            instrutor_nome = st.text_input("Instrutor(a) Responsável:*", value=inst_cfg.instrutor_padrao)
+        with col_m3:
+            cidade_nome = st.text_input("Cidade de Expedição:*", value=inst_cfg.cidade_padrao)
+
+        ementa_texto = st.text_area(
+            "Ementa e Conteúdo Programático (Impresso no verso do certificado):",
+            value="Módulo 1: Fundamentos Práticos e Metodologia Aplicada.\n"
+                  "Módulo 2: Exercícios, Resolução de Problemas e Estudos de Caso.\n"
+                  "Módulo 3: Boas Práticas, Ética Profissional e Projeto de Conclusão.",
+            height=100,
+        )
+
+        st.markdown("---")
+
+        # PARTE B: Planilha de Alunos, Guia de Regras e Template
+        st.markdown("##### 👥 Planilha de Alunos & Frequência")
+
+        with st.expander("📖 Guia Resumido: Regras de Preenchimento da Planilha de Alunos", expanded=False):
+            st.markdown(
+                """
+                ### 📋 Estrutura de Colunas
+                - **`Nome`** *(Obrigatório)*: Nome completo do aluno (mínimo de duas palavras: nome e sobrenome, ex: `Maria de Souza Silva`). Monônimos são rejeitados para segurança jurídica.
+                - **`CPF`** *(Obrigatório/Opcional)*: CPF com 11 dígitos, com ou sem pontuação (`529.982.247-25` ou `52998224725`). O sistema higieniza e valida matematicamente os dígitos verificadores (Módulo 11).
+                
+                ### 🗓️ Controle de Encontros e Presenças (Recomendado)
+                - Você pode registrar os encontros individuais da turma em colunas no formato: **`(4h) AAAA/mmm/DD`** *(sem I ou II)*.
+                  - *Exemplo:* `(4h) 2026/set/01`, `(4h) 2026/set/10`
+                - **Como preencher a presença do aluno:**
+                  - Digite **`TRUE`** para presença e **`FALSE`** para falta (também aceita `1`/`0`, `V`/`F`, `Sim`/`Não`).
+                  - A frequência percentual de cada aluno é calculada proporcionalmente às horas assistidas.
+                - **Ou Frequência Direta:**
+                  - Se não utilizar controle de encontros, use a coluna **`Frequência (%)`** com o percentual de 0 a 100.
+                
+                ### 💡 Template Inteligente
+                - Clique no botão abaixo para baixar o modelo **já pré-configurado** com as datas de início e conclusão digitadas acima!
+                """
+            )
+
+        col_tmpl1, col_tmpl2 = st.columns([1, 1])
+        with col_tmpl1:
+            # Gera modelo dinâmico com base nas datas da turma
+            tmpl_buffer_dinamico = io.BytesIO()
+            generate_template_spreadsheet(
+                tmpl_buffer_dinamico,
+                data_inicio=data_inicio,
+                data_fim=data_conclusao,
+                horas_por_encontro=4,
+                incluir_exemplo=True,
+            )
+            tmpl_buffer_dinamico.seek(0)
+            st.download_button(
+                label="📥 Baixar Modelo Personalizado (.xlsx)",
+                data=tmpl_buffer_dinamico.getvalue(),
+                file_name="modelo_alunos_turma.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Planilha com colunas de data (4h por encontro) baseadas no período digitado acima e linha de exemplo.",
+                type="primary",
+            )
+        with col_tmpl2:
+            # Modelo básico estrito
+            tmpl_buffer_basico = io.BytesIO()
+            generate_template_spreadsheet(tmpl_buffer_basico, incluir_exemplo=False)
+            tmpl_buffer_basico.seek(0)
+            st.download_button(
+                label="📄 Baixar Modelo Básico (Apenas Nome e CPF)",
+                data=tmpl_buffer_basico.getvalue(),
+                file_name="modelo_alunos_basico.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Planilha simples contendo estritamente as colunas Nome e CPF.",
+            )
+
+        col_opt1, col_opt2 = st.columns(2)
+        with col_opt1:
             cpf_obrigatorio = st.checkbox(
                 "Exigir CPF para todos os alunos",
                 value=True,
                 help="Se desmarcado, aceita alunos com CPF em branco (útil para oficinas livres e alunos isentos).",
+            )
+        with col_opt2:
+            freq_minima_input = st.number_input(
+                "Frequência mínima para aprovação (%):",
+                min_value=1,
+                max_value=100,
+                value=75,
+                step=5,
+                help="Alunos com presença apurada abaixo desta porcentagem receberão alerta de inconsistência.",
             )
 
         uploaded_file = st.file_uploader(
@@ -394,7 +496,15 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             res_auditoria: SpreadsheetValidationResult = read_and_validate_spreadsheet(
                 bytes_data,
                 cpf_obrigatorio=cpf_obrigatorio,
+                frequencia_minima=int(freq_minima_input),
             )
+
+            if res_auditoria.encontros_detectados:
+                st.info(
+                    f"🗓️ **Encontros identificados na planilha:** {len(res_auditoria.encontros_detectados)} encontro(s) "
+                    f"totalizando **{res_auditoria.carga_horaria_calculada}h** "
+                    f"({res_auditoria.data_inicio_calculada} a {res_auditoria.data_fim_calculada})."
+                )
 
             # Métricas
             col_m1, col_m2, col_m3 = st.columns(3)
@@ -410,7 +520,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             if res_auditoria.invalid_count > 0:
                 st.warning(
                     "⚠️ Foram encontradas linhas com inconsistências (destacadas abaixo). "
-                    "Você pode **corrigir o Nome ou o CPF diretamente na tabela interativa abaixo**, sem precisar refazer a planilha!"
+                    "Você pode **corrigir o Nome, o CPF ou a Frequência diretamente na tabela interativa abaixo**, sem precisar refazer a planilha!"
                 )
 
                 # Monta DataFrame editável
@@ -440,6 +550,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                         row["CPF"],
                         cpf_obrigatorio=cpf_obrigatorio,
                         frequencia=row["Frequência (%)"],
+                        frequencia_minima=int(freq_minima_input),
                     )
                     alunos_revalidados.append(val)
 
@@ -474,54 +585,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 )
 
         st.markdown("---")
-        st.subheader("2. Dados da Turma e Conteúdo Programático")
-
-        col_c1, col_c2 = st.columns([2, 1])
-        with col_c1:
-            curso_nome = st.text_input(
-                "Nome Oficial do Curso:*",
-                placeholder="Ex: Formação Prática em Inteligência Artificial e Automação",
-            )
-        with col_c2:
-            carga_horaria = st.number_input(
-                "Carga Horária Total (horas):*",
-                min_value=1,
-                max_value=2000,
-                value=40,
-                step=1,
-            )
-            try:
-                extenso_prev = formatar_carga_horaria_extenso(int(carga_horaria))
-                st.caption(f"Por extenso: *{extenso_prev}*")
-            except Exception:
-                pass
-
-        col_d1, col_d2, col_d3 = st.columns(3)
-        with col_d1:
-            data_inicio = st.text_input("Data de Início:", value="01/09/2026")
-        with col_d2:
-            data_conclusao = st.text_input("Data de Conclusão:*", value=datetime.now().strftime("%d/%m/%Y"))
-        with col_d3:
-            data_emissao = st.text_input("Data de Emissão:*", value=datetime.now().strftime("%d/%m/%Y"))
-
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            modalidade = st.text_input("Modalidade:", value="Curso Livre de Capacitação Profissional")
-        with col_m2:
-            instrutor_nome = st.text_input("Instrutor(a) Responsável:*", value=inst_cfg.instrutor_padrao)
-        with col_m3:
-            cidade_nome = st.text_input("Cidade de Expedição:*", value=inst_cfg.cidade_padrao)
-
-        ementa_texto = st.text_area(
-            "Ementa e Conteúdo Programático (Impresso no verso do certificado):",
-            value="Módulo 1: Fundamentos Práticos e Metodologia Aplicada.\n"
-                  "Módulo 2: Exercícios, Resolução de Problemas e Estudos de Caso.\n"
-                  "Módulo 3: Boas Práticas, Ética Profissional e Projeto de Conclusão.",
-            height=120,
-        )
-
-        st.markdown("---")
-        st.subheader("3. Identidade Visual e Assinatura")
+        st.subheader("2. Identidade Visual e Assinatura")
 
         col_cor1, col_cor2 = st.columns(2)
         with col_cor1:
@@ -577,7 +641,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         )
 
         st.markdown("---")
-        st.subheader("4. Pré-Visualização ao Vivo (Frente e Verso)")
+        st.subheader("3. Pré-Visualização ao Vivo (Frente e Verso)")
 
         with st.expander("👁️ Clique para visualizar a prévia gráfica em tempo real antes de emitir", expanded=False):
             # Prepara registro de amostra
@@ -633,7 +697,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     st.image(imgs_prev[1], use_container_width=True)
 
         st.markdown("---")
-        st.subheader("5. Emissão do Lote e Pacote ZIP")
+        st.subheader("4. Emissão do Lote e Pacote ZIP")
 
         # Validação de CNPJ cadastrado
         erros_institucionais = validate_instituicao_config(inst_cfg)

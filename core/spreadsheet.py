@@ -57,13 +57,52 @@ class SpreadsheetValidationResult:
         return self.alunos
 
 
+MESES_NUM_TO_STR = {v: k for k, v in MESES_PT.items()}
+
+
+def _parse_date_input(val: Any) -> Optional[datetime]:
+    """Interpreta datas a partir de string, date ou datetime."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    from datetime import date
+    if isinstance(val, date):
+        return datetime(val.year, val.month, val.day)
+    s = str(val).strip()
+    if not s:
+        return None
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def format_encounter_header(dt: Union[datetime, Any], horas: int = 4) -> str:
+    """Gera o nome de coluna de encontro no padrão oficial: '(4h) AAAA/mmm/DD' sem I ou II."""
+    d = _parse_date_input(dt)
+    if d is None:
+        raise ValueError(f"Data inválida para coluna de encontro: {dt}")
+    mes_str = MESES_NUM_TO_STR.get(d.month, "jan")
+    return f"({horas}h) {d.year}/{mes_str}/{d.day:02d}"
+
+
 def generate_template_spreadsheet(
-    destination: Union[str, Path, io.BytesIO] = "modelo_alunos.xlsx"
+    destination: Union[str, Path, io.BytesIO] = "modelo_alunos.xlsx",
+    data_inicio: Optional[Union[str, Any]] = None,
+    data_fim: Optional[Union[str, Any]] = None,
+    horas_por_encontro: int = 4,
+    incluir_exemplo: bool = False,
 ) -> Union[Path, io.BytesIO]:
     """
-    Gera a planilha modelo oficial 'modelo_alunos.xlsx' contendo estritamente
-    as colunas 'Nome' e 'CPF' com formatação visual profissional.
-    Não insere linhas de dados de teste para evitar emissões acidentais.
+    Gera a planilha modelo oficial 'modelo_alunos.xlsx' contendo as colunas 'Nome' e 'CPF'
+    e opcionalmente as colunas de encontros configuradas a partir das datas da turma.
+    
+    Se data_inicio e/ou data_fim forem fornecidas:
+    - Adiciona colunas no formato oficial '(4h) AAAA/mmm/DD' (sem numeração I/II).
+    - Se incluir_exemplo=True, insere linha de exemplo com data inicial = True e data final = False.
     """
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -74,20 +113,52 @@ def generate_template_spreadsheet(
     header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")  # Azul Marinho
     header_align = Alignment(horizontal="center", vertical="center")
 
-    # Cabeçalho oficial estrito
     headers = ["Nome", "CPF"]
-    ws.append(headers)
+    col_ini_hdr = None
+    col_fim_hdr = None
 
+    dt_ini = _parse_date_input(data_inicio)
+    dt_fim = _parse_date_input(data_fim)
+
+    if dt_ini:
+        col_ini_hdr = format_encounter_header(dt_ini, horas=horas_por_encontro)
+        headers.append(col_ini_hdr)
+        if dt_fim and dt_fim.date() != dt_ini.date():
+            col_fim_hdr = format_encounter_header(dt_fim, horas=horas_por_encontro)
+            headers.append(col_fim_hdr)
+
+    ws.append(headers)
     ws.row_dimensions[1].height = 25
-    for col_idx in range(1, 3):
+
+    for col_idx in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col_idx)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_align
 
     # Ajuste de largura das colunas
-    ws.column_dimensions["A"].width = 35
+    ws.column_dimensions["A"].width = 36
     ws.column_dimensions["B"].width = 22
+    for col_idx in range(3, len(headers) + 1):
+        from openpyxl.utils import get_column_letter
+        col_letter = get_column_letter(col_idx)
+        ws.column_dimensions[col_letter].width = 26
+
+    # Linha de exemplo
+    if incluir_exemplo:
+        exemplo_row: List[Any] = ["Maria de Souza Silva", "529.982.247-25"]
+        if col_ini_hdr:
+            exemplo_row.append(True)
+            if col_fim_hdr:
+                exemplo_row.append(False)
+        ws.append(exemplo_row)
+        ws.row_dimensions[2].height = 22
+        ws.cell(row=2, column=1).alignment = Alignment(horizontal="left", vertical="center")
+        ws.cell(row=2, column=2).alignment = Alignment(horizontal="center", vertical="center")
+        if col_ini_hdr:
+            ws.cell(row=2, column=3).alignment = Alignment(horizontal="center", vertical="center")
+            if col_fim_hdr:
+                ws.cell(row=2, column=4).alignment = Alignment(horizontal="center", vertical="center")
 
     # Salvar para caminho ou buffer
     if isinstance(destination, io.IOBase):

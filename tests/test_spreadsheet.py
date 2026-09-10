@@ -215,3 +215,35 @@ def test_read_and_validate_encounter_columns_and_frequency(tmp_path: Path):
     assert result.valid_count == 2
     assert result.invalid_count == 1
 
+
+def test_generate_template_with_dates_and_example(tmp_path: Path):
+    """Testa geração de planilha modelo dinâmica baseada nas datas da turma."""
+    target_file = tmp_path / "modelo_turma.xlsx"
+    generate_template_spreadsheet(
+        target_file,
+        data_inicio="10/09/2026",
+        data_fim="15/09/2026",
+        horas_por_encontro=4,
+        incluir_exemplo=True,
+    )
+    assert target_file.exists()
+
+    wb = openpyxl.load_workbook(target_file)
+    ws = wb.active
+    assert ws is not None
+
+    headers = [cell.value for cell in ws[1]]
+    assert headers[0] == "Nome"
+    assert headers[1] == "CPF"
+    assert headers[2] == "(4h) 2026/set/10"
+    assert headers[3] == "(4h) 2026/set/15"
+
+    assert ws.max_row == 2
+    exemplo_row = [cell.value for cell in ws[2]]
+    assert exemplo_row[0] == "Maria de Souza Silva"
+    assert exemplo_row[1] == "529.982.247-25"
+    assert exemplo_row[2] is True
+    assert exemplo_row[3] is False
+    wb.close()
+
+
