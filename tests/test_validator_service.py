@@ -106,11 +106,13 @@ def test_validar_codigo_autentico(tmp_path: Path):
     assert resultado.instrutor == "Prof. Alan Turing"
     assert resultado.cidade == "São Paulo - SP"
     assert "Pandas e NumPy" in resultado.ementa
+    assert resultado.frequencia == 100
 
     # Teste de serialização segura to_dict()
     data_dict = resultado.to_dict()
     assert data_dict["autentico"] is True
     assert data_dict["aluno_cpf_mascarado"] == "***.456.789-**"
+    assert data_dict["frequencia"] == 100
     # Certificar ausência total de chaves com CPF cru ou download de arquivo
     assert "aluno_cpf" not in data_dict
     assert "cpf" not in data_dict

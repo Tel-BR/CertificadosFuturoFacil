@@ -137,6 +137,7 @@ class ResultadoValidacaoPublica:
     instrutor: Optional[str] = None
     cidade: Optional[str] = None
     ementa: Optional[str] = None
+    frequencia: Optional[int] = None
 
     @classmethod
     def from_registro(
@@ -168,6 +169,7 @@ class ResultadoValidacaoPublica:
             instrutor=registro.instrutor,
             cidade=registro.cidade,
             ementa=registro.ementa,
+            frequencia=getattr(registro, "frequencia", 100),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -194,6 +196,7 @@ class ResultadoValidacaoPublica:
             "instrutor": self.instrutor,
             "cidade": self.cidade,
             "ementa": self.ementa,
+            "frequencia": self.frequencia,
         }
 
 
