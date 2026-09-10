@@ -13,3 +13,7 @@ htmlcov/
 output/
 dist/
 build/
+*.db
+*.xlsx
+*.zip
+.streamlit/secrets.toml

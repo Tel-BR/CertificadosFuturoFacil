@@ -147,10 +147,13 @@ st.markdown(
 # ==============================================================================
 
 def get_admin_password() -> str:
-    """Obtém a senha mestre de administrador do ambiente ou secrets."""
-    if hasattr(st, "secrets") and "ADMIN_PASSWORD" in st.secrets:
-        return str(st.secrets["ADMIN_PASSWORD"])
-    return os.getenv("ADMIN_PASSWORD", "admin123")
+    """Obtém a senha mestre de administrador do ambiente ou secrets com fallback seguro."""
+    try:
+        if "ADMIN_PASSWORD" in st.secrets:
+            return str(st.secrets["ADMIN_PASSWORD"])
+    except Exception:
+        pass
+    return os.getenv("ADMIN_PASSWORD", "futurofacil123")
 
 
 def get_manager() -> LivroRegistroManager:
@@ -188,8 +191,12 @@ def render_pdf_to_images(pdf_bytes: bytes) -> List[bytes]:
 query_validar = st.query_params.get("validar") or st.query_params.get("codigo")
 
 # Menu de navegação lateral
-st.sidebar.markdown("### 🎓 Futuro Fácil")
+if Path("assets/logo.svg").exists():
+    st.sidebar.image("assets/logo.svg", use_container_width=True)
+else:
+    st.sidebar.markdown("### 🎓 Futuro Fácil")
 st.sidebar.caption("Sistema de Certificados Digitais")
+st.sidebar.markdown("---")
 
 modo_selecionado = st.sidebar.radio(
     "Navegação:",
@@ -205,7 +212,10 @@ modo_selecionado = st.sidebar.radio(
 if modo_selecionado == "🔍 Validação Pública":
     inst_cfg = load_instituicao_config()
 
-    st.markdown(f"<h1 class='main-header'>{inst_cfg.nome_fantasia.upper()}</h1>", unsafe_allow_html=True)
+    if Path("assets/logo.svg").exists():
+        st.image("assets/logo.svg", width=320)
+    else:
+        st.markdown(f"<h1 class='main-header'>{inst_cfg.nome_fantasia.upper()}</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='sub-header'>{inst_cfg.tagline} · CONSULTA PÚBLICA DE AUTENTICIDADE</div>", unsafe_allow_html=True)
 
     st.info(
@@ -306,6 +316,8 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
 
     # Controle de Autenticação
     if not st.session_state.get("admin_authenticated", False):
+        if Path("assets/logo.svg").exists():
+            st.image("assets/logo.svg", width=300)
         st.markdown("<h2 class='main-header'>Acesso Administrativo</h2>", unsafe_allow_html=True)
         st.write("Digite sua senha de administrador para acessar o painel de emissão e controle.")
 
@@ -330,6 +342,8 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
     inst_cfg = load_instituicao_config()
     manager = get_manager()
 
+    if Path("assets/logo.svg").exists():
+        st.image("assets/logo.svg", width=280)
     st.markdown("<h1 class='main-header'>Painel de Emissão e Auditoria</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='sub-header'>{inst_cfg.nome_fantasia.upper()} · {inst_cfg.razao_social} (CNPJ: {inst_cfg.cnpj})</div>", unsafe_allow_html=True)
 
