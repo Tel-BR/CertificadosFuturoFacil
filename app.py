@@ -416,15 +416,15 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 ### 📋 Estrutura de Colunas
                 - **`Nome`** *(Obrigatório)*: Nome completo do aluno (mínimo de duas palavras: nome e sobrenome, ex: `Maria de Souza Silva`). Monônimos são rejeitados para segurança jurídica.
                 - **`CPF`** *(Obrigatório/Opcional)*: CPF com 11 dígitos, com ou sem pontuação (`529.982.247-25` ou `52998224725`). O sistema higieniza e valida matematicamente os dígitos verificadores (Módulo 11).
+                - **`Aproveitamento (%)`** *(Opcional / Manual)*: Digite aqui o percentual manual (ex: `85` ou `100%`) caso já queira fixar o aproveitamento diretamente. **Se preenchido, torna-se a fonte da verdade absoluta e nenhum cálculo é realizado.**
                 
-                ### 🗓️ Controle de Encontros e Presenças (Recomendado)
+                ### 🗓️ Controle de Encontros e Presenças (Cálculo Automático)
                 - Você pode registrar os encontros individuais da turma em colunas no formato: **`(4h) AAAA/mmm/DD`** *(sem I ou II)*.
                   - *Exemplo:* `(4h) 2026/set/01`, `(4h) 2026/set/10`
-                - **Como preencher a presença do aluno:**
+                - **Como funciona o cálculo de presença:**
                   - Digite **`TRUE`** para presença e **`FALSE`** para falta (também aceita `1`/`0`, `V`/`F`, `Sim`/`Não`).
-                  - A frequência percentual de cada aluno é calculada proporcionalmente às horas assistidas.
-                - **Ou Frequência Direta:**
-                  - Se não utilizar controle de encontros, use a coluna **`Frequência (%)`** com o percentual de 0 a 100.
+                  - **Se `Aproveitamento (%)` estiver em branco**, o aproveitamento é calculado automaticamente a partir dos booleanos das colunas de encontros (`horas_presentes / carga_horaria_total * 100`).
+                - Se não houver coluna de aproveitamento nem colunas de encontros, adota-se 100% por padrão.
                 
                 ### 💡 Template Inteligente
                 - Clique no botão abaixo para baixar o modelo **já pré-configurado** com as datas de início e conclusão digitadas acima!

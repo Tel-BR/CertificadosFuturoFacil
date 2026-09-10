@@ -217,7 +217,7 @@ def test_read_and_validate_encounter_columns_and_frequency(tmp_path: Path):
 
 
 def test_generate_template_with_dates_and_example(tmp_path: Path):
-    """Testa geração de planilha modelo dinâmica baseada nas datas da turma."""
+    """Testa geração de planilha modelo dinâmica baseada nas datas da turma com coluna de aproveitamento."""
     target_file = tmp_path / "modelo_turma.xlsx"
     generate_template_spreadsheet(
         target_file,
@@ -235,15 +235,51 @@ def test_generate_template_with_dates_and_example(tmp_path: Path):
     headers = [cell.value for cell in ws[1]]
     assert headers[0] == "Nome"
     assert headers[1] == "CPF"
-    assert headers[2] == "(4h) 2026/set/10"
-    assert headers[3] == "(4h) 2026/set/15"
+    assert headers[2] == "Aproveitamento (%)"
+    assert headers[3] == "(4h) 2026/set/10"
+    assert headers[4] == "(4h) 2026/set/15"
 
     assert ws.max_row == 2
     exemplo_row = [cell.value for cell in ws[2]]
     assert exemplo_row[0] == "Maria de Souza Silva"
     assert exemplo_row[1] == "529.982.247-25"
-    assert exemplo_row[2] is True
-    assert exemplo_row[3] is False
+    assert exemplo_row[2] is None
+    assert exemplo_row[3] is True
+    assert exemplo_row[4] is False
     wb.close()
+
+
+def test_manual_aproveitamento_precedence_over_encounters(tmp_path: Path):
+    """
+    Testa se o número digitado na coluna de aproveitamento se torna a fonte da verdade,
+    dispensando o cálculo por booleanos, e se quando vazia calcula normalmente pelos encontros.
+    """
+    test_file = tmp_path / "teste_precedencia.xlsx"
+    df = pd.DataFrame(
+        {
+            "Nome": ["Aluno Um Silva", "Aluno Dois Santos", "Aluno Tres Costa"],
+            "CPF": ["529.982.247-25", "111.444.777-35", "012.345.678-90"],
+            "Aproveitamento (%)": [85, None, "100%"],  # Aluno 1: manual 85%, Aluno 2: vazio (calcula), Aluno 3: manual 100%
+            "(4h) 2026/set/01": [True, True, False],
+            "(4h) 2026/set/10": [False, False, False],
+        }
+    )
+    df.to_excel(test_file, index=False)
+
+    result = read_and_validate_spreadsheet(test_file)
+    assert result.total_rows == 3
+
+    # Aluno 1: presença nos booleanos daria 4h/8h = 50%, mas como forneceu 85%, a fonte da verdade é 85%!
+    assert result.alunos[0].frequencia == 85
+    assert result.alunos[0].is_valido is True
+
+    # Aluno 2: aproveitamento manual estava vazio (None), então calcula normalmente pelos encontros (4h/8h = 50%)
+    assert result.alunos[1].frequencia == 50
+    assert result.alunos[1].is_valido is False  # reprovado (< 75%)
+
+    # Aluno 3: presença nos booleanos daria 0h/8h = 0%, mas como forneceu 100%, a fonte da verdade é 100%!
+    assert result.alunos[2].frequencia == 100
+    assert result.alunos[2].is_valido is True
+
 
 

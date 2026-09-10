@@ -113,7 +113,7 @@ def generate_template_spreadsheet(
     header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")  # Azul Marinho
     header_align = Alignment(horizontal="center", vertical="center")
 
-    headers = ["Nome", "CPF"]
+    headers = ["Nome", "CPF", "Aproveitamento (%)"]
     col_ini_hdr = None
     col_fim_hdr = None
 
@@ -139,14 +139,15 @@ def generate_template_spreadsheet(
     # Ajuste de largura das colunas
     ws.column_dimensions["A"].width = 36
     ws.column_dimensions["B"].width = 22
-    for col_idx in range(3, len(headers) + 1):
+    ws.column_dimensions["C"].width = 22
+    for col_idx in range(4, len(headers) + 1):
         from openpyxl.utils import get_column_letter
         col_letter = get_column_letter(col_idx)
         ws.column_dimensions[col_letter].width = 26
 
     # Linha de exemplo
     if incluir_exemplo:
-        exemplo_row: List[Any] = ["Maria de Souza Silva", "529.982.247-25"]
+        exemplo_row: List[Any] = ["Maria de Souza Silva", "529.982.247-25", None]
         if col_ini_hdr:
             exemplo_row.append(True)
             if col_fim_hdr:
@@ -155,10 +156,11 @@ def generate_template_spreadsheet(
         ws.row_dimensions[2].height = 22
         ws.cell(row=2, column=1).alignment = Alignment(horizontal="left", vertical="center")
         ws.cell(row=2, column=2).alignment = Alignment(horizontal="center", vertical="center")
+        ws.cell(row=2, column=3).alignment = Alignment(horizontal="center", vertical="center")
         if col_ini_hdr:
-            ws.cell(row=2, column=3).alignment = Alignment(horizontal="center", vertical="center")
+            ws.cell(row=2, column=4).alignment = Alignment(horizontal="center", vertical="center")
             if col_fim_hdr:
-                ws.cell(row=2, column=4).alignment = Alignment(horizontal="center", vertical="center")
+                ws.cell(row=2, column=5).alignment = Alignment(horizontal="center", vertical="center")
 
     # Salvar para caminho ou buffer
     if isinstance(destination, io.IOBase):
@@ -237,7 +239,10 @@ def read_and_validate_spreadsheet(
             col_map[col] = "Nome"
         elif clean_col == "cpf":
             col_map[col] = "CPF"
-        elif clean_col in ("frequencia", "frequência", "freq", "frequencia (%)", "frequência (%)"):
+        elif clean_col in (
+            "frequencia", "frequência", "freq", "frequencia (%)", "frequência (%)",
+            "aproveitamento", "aproveitamento (%)", "aprov", "aprov (%)",
+        ):
             col_map[col] = "Frequencia"
         else:
             m = ENCOUNTER_REGEX.match(col_str)
@@ -270,7 +275,7 @@ def read_and_validate_spreadsheet(
     if colunas_extras:
         global_errors.append(
             f"A planilha contém colunas não permitidas: {', '.join(colunas_extras)}. "
-            "As colunas devem ser 'Nome', 'CPF' e encontros no formato '(4h) I 2026/ago/08'."
+            "As colunas permitidas são 'Nome', 'CPF', 'Aproveitamento (%)' e encontros no formato '(4h) AAAA/mmm/DD'."
         )
 
     if "Nome" not in col_map.values() or "CPF" not in col_map.values():
@@ -317,36 +322,46 @@ def read_and_validate_spreadsheet(
         else:
             raw_cpf = ""
 
-        # Apuração de frequência
+        # Apuração de frequência / aproveitamento
         horas_presentes = None
-        if encontros and carga_horaria_calc and carga_horaria_calc > 0:
-            horas_presentes = 0
-            for enc in encontros:
-                cell_val = row[enc.nome_coluna]
-                is_presente = False
-                if isinstance(cell_val, bool):
-                    is_presente = cell_val
-                elif pd.notna(cell_val):
-                    val_s = str(cell_val).strip().lower()
-                    if val_s in ("true", "1", "1.0", "verdadeiro", "v", "sim", "s", "x"):
-                        is_presente = True
-                if is_presente:
-                    horas_presentes += enc.horas
+        freq_calc = None
 
-            freq_calc = round((horas_presentes / carga_horaria_calc) * 100)
-        elif "Frequencia" in col_map.values():
+        # 1. Verifica se o usuário informou diretamente o número de aproveitamento/frequência
+        if "Frequencia" in col_map.values():
             freq_col_name = [orig for orig, mapped in col_map.items() if mapped == "Frequencia"][0]
             val_freq = row[freq_col_name]
             if pd.notna(val_freq):
-                clean_f = str(val_freq).replace("%", "").strip()
-                try:
-                    freq_calc = round(float(clean_f))
-                except ValueError:
-                    freq_calc = 100
+                val_freq_clean = str(val_freq).replace("%", "").strip()
+                if val_freq_clean != "":
+                    try:
+                        freq_calc = round(float(val_freq_clean))
+                    except ValueError:
+                        freq_calc = None
+
+        # 2. Se o número NÃO foi fornecido manualmente (vazio ou em branco),
+        # calcula normalmente a partir dos booleanos dos encontros
+        if freq_calc is None:
+            if encontros and carga_horaria_calc and carga_horaria_calc > 0:
+                horas_presentes = 0
+                for enc in encontros:
+                    cell_val = row[enc.nome_coluna]
+                    is_presente = False
+                    if isinstance(cell_val, bool):
+                        is_presente = cell_val
+                    elif pd.notna(cell_val):
+                        val_s = str(cell_val).strip().lower()
+                        if val_s in ("true", "1", "1.0", "verdadeiro", "v", "sim", "s", "x"):
+                            is_presente = True
+                    if is_presente:
+                        horas_presentes += enc.horas
+
+                freq_calc = round((horas_presentes / carga_horaria_calc) * 100)
             else:
                 freq_calc = 100
         else:
-            freq_calc = 100
+            # Número fornecido manualmente: NÃO precisa calcular, é a fonte da verdade!
+            if carga_horaria_calc and carga_horaria_calc > 0:
+                horas_presentes = round((freq_calc / 100) * carga_horaria_calc)
 
         aluno = validar_aluno(
             raw_name,
