@@ -176,21 +176,25 @@ def draw_security_seal(
 
 def draw_continuous_l_ribbon(
     c: canvas.Canvas,
-    x_base: float,
-    y_top: float,
-    y_corner: float,
-    x_right: float,
-    radius: float = 28.0,
-    num_waves: int = 6,
-    amplitude: float = 5.0,
+    x_base: float = 16.0,
+    y_top: float = 595.27,
+    y_corner: float = 16.0,
+    x_right: float = 841.89,
+    radius: float = 18.0,
+    num_waves: int = 28,
+    amplitude: float = 7.2,
+    frequency: float = 12.0,
+    spacing: float = 0.62,
     primary_color: Union[str, colors.Color] = "#0E7490",
     secondary_color: Union[str, colors.Color] = "#EA580C",
-    line_width: float = 0.35,
-    num_samples: int = 360,
+    line_width: float = 0.22,
+    num_samples: int = 900,
 ) -> None:
     """
-    Desenha uma fita contínua em L de ondas harmônicas micrométricas que contorna
-    suavemente o canto inferior esquerdo sem qualquer cruzamento de linhas.
+    Desenha uma fita contínua em L de alta densidade numismática, composta por feixes de
+    linhas harmônicas micrométricas que se entrelaçam continuamente (trellis/moiré)
+    em contra-fase, expandindo-se para fora em direção à sangria e preservando o
+    respiro dos textos do certificado.
     """
     col_primary = resolve_color(primary_color)
     col_secondary = resolve_color(secondary_color)
@@ -205,15 +209,22 @@ def draw_continuous_l_ribbon(
         c.restoreState()
         return
 
+    half = num_waves // 2
+
     for w_idx in range(num_waves):
         t_factor = w_idx / max(1, num_waves - 1)
         line_col = interpolate_color(col_primary, col_secondary, t_factor)
         c.setStrokeColor(line_col)
-        c.setLineWidth(line_width + 0.25 * (1.0 - t_factor))
+        c.setLineWidth(line_width + 0.10 * (1.0 - t_factor))
+
+        is_b = (w_idx >= half)
+        f_idx = (w_idx - half) if is_b else w_idx
+        f_cnt = (num_waves - half) if is_b else half
+        lat_offset = (f_idx - (f_cnt - 1) / 2.0) * spacing
+        direction = -1.0 if is_b else 1.0
+        phase = direction * f_idx * 0.42
 
         path = c.beginPath()
-        phase = w_idx * 0.35
-        lat_offset = 1.5 + w_idx * 1.8
 
         for s in range(num_samples + 1):
             d = (s / num_samples) * total_len
@@ -241,8 +252,10 @@ def draw_continuous_l_ribbon(
                 py_base = y_corner
                 nx, ny = 0.0, 1.0
 
-            envelope = math.sin(math.pi * frac) ** 0.5
-            disp = (amplitude * math.sin(frac * 2.0 * math.pi * 5.0 + phase) * envelope) + lat_offset
+            ang1 = frac * 2.0 * math.pi * frequency + phase
+            ang2 = frac * 2.0 * math.pi * (frequency * 2.1) + phase * 1.6
+
+            disp = lat_offset + (amplitude * direction) * math.sin(ang1) + (amplitude * 0.32) * math.cos(ang2)
 
             x_pt = px_base + nx * disp
             y_pt = py_base + ny * disp
@@ -270,7 +283,8 @@ def draw_guilloche_frame(
     """
     Renderiza a moldura de segurança completa do anverso:
     - Linhas guia perimétricas de alta precisão numismática.
-    - Fita contínua em L de ondas harmônicas iniciando e finalizando encostadas no limite da página (sangria total).
+    - Fita contínua em L de ondas harmônicas micrométricas entrelaçadas (28 linhas em contra-fase moiré)
+      com expansão externa e sangria total encostada nos limites da página.
     - Suporte opcional ao selo numismático contemporâneo.
     """
     col_primary = resolve_color(primary_color)
@@ -294,16 +308,18 @@ def draw_guilloche_frame(
         c.drawString(margin + 12, height - margin - 12, (micro_txt * 4)[:220])
         c.drawString(margin + 12, margin + 10, (micro_txt * 4)[:220])
 
-    # Fita de ondas harmônicas contínua em L (iniciando e terminando encostadas no limite da página, pra fora das bordas de sangria)
+    # Fita de ondas harmônicas contínua em L (28 linhas micrométricas entrelaçadas em contra-fase)
     draw_continuous_l_ribbon(
         c,
-        x_base=margin + 4,
+        x_base=16.0,
         y_top=height,
-        y_corner=margin + 4,
+        y_corner=16.0,
         x_right=width,
-        radius=28.0,
-        num_waves=6,
-        amplitude=5.0,
+        radius=18.0,
+        num_waves=28,
+        amplitude=7.2,
+        frequency=12.0,
+        spacing=0.62,
         primary_color=col_primary,
         secondary_color=col_secondary,
     )
