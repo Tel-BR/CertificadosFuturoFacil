@@ -211,3 +211,41 @@ def test_generate_batch_certificates(tmp_path, sample_registro):
         assert p.suffix == ".pdf"
         reader = pypdf.PdfReader(str(p))
         assert len(reader.pages) == 2
+
+
+def test_certificate_dynamic_wrapping_and_right_aligned_date():
+    """Verifica comportamento com textos longos (quebra dinâmica de linha) e alinhamento de data."""
+    reg_long = CertificadoRegistro(
+        id=3,
+        codigo_autenticidade="C3D4E5F60718293A4B5C6D7E8F901234567890ABCDEF1234567890ABCDEF0123",
+        aluno_nome="Danilo Alves de Oliveira da Costa e Silva de Albuquerque",
+        aluno_cpf="12345678901",
+        aluno_cpf_mascarado="***.456.789-**",
+        curso_nome="Capacitação Prática em Inteligência Artificial Generativa, Engenharia de Prompts e Automação Avançada de Processos",
+        carga_horaria=120,
+        carga_horaria_extenso="cento e vinte horas de atividades práticas e mentorias individuais",
+        data_inicio="08/08/2026",
+        data_conclusao="18/11/2026",
+        data_emissao="18/11/2026",
+        modalidade="Curso Livre de Capacitação Profissional",
+        instrutor="Tel Santana Leite",
+        cidade="Goiânia",
+        ementa="Ementa extensa.",
+        livro_numero=1,
+        folha_numero=5,
+        registro_numero=5,
+        frequencia=100,
+    )
+
+    pdf_bytes = generate_certificate_pdf(reg_long)
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    assert len(reader.pages) == 2
+
+    p1_text = reader.pages[0].extract_text()
+    assert "DANILO ALVES DE OLIVEIRA" in p1_text
+    assert "Inteligência Artificial Generativa" in p1_text
+    assert "Goiânia, 18 de novembro de 2026." in p1_text
+    assert "Tel Santana Leite" in p1_text
+    assert "Instrutor" in p1_text
+    assert "Discente" in p1_text
+

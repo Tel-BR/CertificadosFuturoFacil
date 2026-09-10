@@ -24,7 +24,7 @@ from reportlab.graphics import renderPDF
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.utils import ImageReader
+from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
@@ -432,34 +432,46 @@ def render_anverso(
     c.line(title_x, title_y - 12, title_x + 140, title_y - 12)
     c.restoreState()
 
-    # Bloco do Texto de Concessão
+    # Bloco do Texto de Concessão com Quebra Dinâmica e Alinhamento
     c.saveState()
     body_x = margin + 42
-    body_y = height - 245
+    curr_y = height - 245
+    max_w = width - (margin + 42) * 2  # largura útil de texto ~710 pt
 
     # Frase inicial
     c.setFont(get_font_regular(), 13.5)
     c.setFillColor(colors.HexColor("#64748B"))
-    c.drawString(body_x, body_y, "Certificamos com distinção que")
+    c.drawString(body_x, curr_y, "Certificamos com distinção que")
+    curr_y -= 32
 
-    # Nome do Aluno
-    c.setFont(get_font_black(), 27)
-    c.setFillColor(primary_col)
+    # Nome do Aluno (com redução proporcional se nome for excepcionalmente longo)
     nome_exibicao = registro.aluno_nome.upper()
-    c.drawString(body_x, body_y - 34, nome_exibicao)
+    font_aluno = get_font_black()
+    size_aluno = 27.0
+    while c.stringWidth(nome_exibicao, font_aluno, size_aluno) > max_w and size_aluno > 18.0:
+        size_aluno -= 0.5
+    c.setFont(font_aluno, size_aluno)
+    c.setFillColor(primary_col)
+    c.drawString(body_x, curr_y, nome_exibicao)
+    curr_y -= 28
 
     # Identificação do CPF e introdução ao curso
     cpf_formatado = format_cpf(registro.aluno_cpf) if registro.aluno_cpf else "não informado"
     c.setFont(get_font_regular(), 13)
     c.setFillColor(colors.HexColor("#334155"))
-    c.drawString(body_x, body_y - 62, f"inscrito(a) no CPF sob o nº {cpf_formatado}, concluiu o treinamento prático de")
+    c.drawString(body_x, curr_y, f"inscrito(a) no CPF sob o nº {cpf_formatado}, concluiu o treinamento prático de")
+    curr_y -= 28
 
-    # Nome do Curso
+    # Nome do Curso (quebra dinâmica de linha automática via simpleSplit)
     c.setFont(get_font_black(), 20)
     c.setFillColor(secondary_col)
-    c.drawString(body_x, body_y - 90, registro.curso_nome)
+    curso_lines = simpleSplit(registro.curso_nome, get_font_black(), 20, max_w)
+    for cline in curso_lines:
+        c.drawString(body_x, curr_y, cline)
+        curr_y -= 24
+    curr_y += 2
 
-    # Período, Carga Horária e Frequência
+    # Período, Carga Horária e Frequência (quebra dinâmica de linha automática)
     if registro.data_inicio and registro.data_conclusao and registro.data_inicio != registro.data_conclusao:
         periodo_str = f"no período de {registro.data_inicio} a {registro.data_conclusao}"
     elif registro.data_conclusao:
@@ -474,17 +486,22 @@ def render_anverso(
 
     c.setFont(get_font_regular(), 12.5)
     c.setFillColor(colors.HexColor("#334155"))
-    c.drawString(body_x, body_y - 116, linha_conclusao)
+    conclusao_lines = simpleSplit(linha_conclusao, get_font_regular(), 12.5, max_w)
+    for lline in conclusao_lines:
+        c.drawString(body_x, curr_y, lline)
+        curr_y -= 18
 
-    # Cidade e Data de Emissão por extenso
+    # Cidade e Data de Emissão por extenso (alinhada à DIREITA, conforme tradição formal)
+    curr_y -= 8
     cidade_nome = registro.cidade.strip() if (registro.cidade and registro.cidade.strip()) else config.city_default
     data_raw = registro.data_emissao or registro.data_conclusao or ""
     data_extenso = format_date_pt_extenso(data_raw)
     cidade_data = f"{cidade_nome}, {data_extenso}." if data_extenso else f"{cidade_nome}."
 
+    right_margin_x = width - margin - 50  # alinhamento à direita com a linha de assinatura do instrutor
     c.setFont(get_font_bold(), 10.5)
     c.setFillColor(primary_col)
-    c.drawString(body_x, body_y - 146, cidade_data)
+    c.drawRightString(right_margin_x, curr_y, cidade_data)
     c.restoreState()
 
     # ==============================================================================
