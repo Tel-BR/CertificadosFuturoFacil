@@ -51,6 +51,7 @@ from core.spreadsheet import (
     read_and_validate_spreadsheet,
 )
 from core.validator import (
+    ValidacaoAluno,
     clean_cnpj,
     clean_cpf,
     format_cnpj,
@@ -849,7 +850,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             st.info("Nenhuma turma com diário registrado até o momento. Ao emitir um lote de certificados na aba anterior, a turma e seus encontros serão automaticamente arquivados aqui.")
         else:
             opcoes_turmas = {
-                t["id"]: f"Turma #{t['id']}: {t['identificador_turma'] or t['curso_nome']} ({t['data_inicio'] or ''} a {t['data_conclusao'] or ''}) - {t['total_alunos']} aluno(s)"
+                t["id"]: f"Turma #{t['id']}: {t.get('identificador_lote') or t.get('identificador_turma') or t.get('curso_nome')} ({t.get('data_inicio') or ''} a {t.get('data_conclusao') or ''}) - {t.get('total_alunos', 0)} aluno(s)"
                 for t in turmas
             }
             turma_selecionada_id = st.selectbox(
