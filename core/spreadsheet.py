@@ -136,10 +136,12 @@ def generate_template_spreadsheet(
         cell.fill = header_fill
         cell.alignment = header_align
 
-    # Ajuste de largura das colunas
+    # Ajuste de largura das colunas e formatação de texto para CPF
     ws.column_dimensions["A"].width = 36
     ws.column_dimensions["B"].width = 22
     ws.column_dimensions["C"].width = 22
+    ws.column_dimensions["B"].number_format = '@'
+
     for col_idx in range(4, len(headers) + 1):
         from openpyxl.utils import get_column_letter
         col_letter = get_column_letter(col_idx)
@@ -156,6 +158,7 @@ def generate_template_spreadsheet(
         ws.row_dimensions[2].height = 22
         ws.cell(row=2, column=1).alignment = Alignment(horizontal="left", vertical="center")
         ws.cell(row=2, column=2).alignment = Alignment(horizontal="center", vertical="center")
+        ws.cell(row=2, column=2).number_format = '@'
         ws.cell(row=2, column=3).alignment = Alignment(horizontal="center", vertical="center")
         if col_ini_hdr:
             ws.cell(row=2, column=4).alignment = Alignment(horizontal="center", vertical="center")
@@ -313,18 +316,40 @@ def read_and_validate_spreadsheet(
         raw_name = str(row[nome_col]) if pd.notna(row[nome_col]) else ""
         val_cpf = row[cpf_col]
 
-        # Trata inteiros do pandas onde o zero à esquerda foi suprimido pelo Excel
+        # Trata inteiros/floats do pandas onde o zero à esquerda foi suprimido pelo Excel
         if isinstance(val_cpf, (int, float)) and pd.notna(val_cpf):
             str_cpf = str(int(val_cpf))
-            raw_cpf = str_cpf.zfill(11) if len(str_cpf) == 10 else str_cpf
+            if 8 <= len(str_cpf) <= 10:
+                raw_cpf = str_cpf.zfill(11)
+            else:
+                raw_cpf = str_cpf
         elif pd.notna(val_cpf):
-            raw_cpf = str(val_cpf)
+            str_cpf = str(val_cpf).strip()
+            # Se for string numérica com 8 a 10 dígitos, aplica zfill
+            digits = re.sub(r"\D", "", str_cpf)
+            if 8 <= len(digits) <= 10 and "." not in str_cpf and "-" not in str_cpf:
+                raw_cpf = digits.zfill(11)
+            else:
+                raw_cpf = str_cpf
         else:
             raw_cpf = ""
 
-        # Apuração de frequência / aproveitamento
+        # Apuração de frequência / aproveitamento e mapa de presenças individuais
         horas_presentes = None
         freq_calc = None
+        detalhes_presenca = {}
+
+        if encontros:
+            for enc in encontros:
+                cell_val = row[enc.nome_coluna]
+                is_presente = False
+                if isinstance(cell_val, bool):
+                    is_presente = cell_val
+                elif pd.notna(cell_val):
+                    val_s = str(cell_val).strip().lower()
+                    if val_s in ("true", "1", "1.0", "verdadeiro", "v", "sim", "s", "x"):
+                        is_presente = True
+                detalhes_presenca[enc.nome_coluna] = is_presente
 
         # 1. Verifica se o usuário informou diretamente o número de aproveitamento/frequência
         if "Frequencia" in col_map.values():
@@ -342,19 +367,7 @@ def read_and_validate_spreadsheet(
         # calcula normalmente a partir dos booleanos dos encontros
         if freq_calc is None:
             if encontros and carga_horaria_calc and carga_horaria_calc > 0:
-                horas_presentes = 0
-                for enc in encontros:
-                    cell_val = row[enc.nome_coluna]
-                    is_presente = False
-                    if isinstance(cell_val, bool):
-                        is_presente = cell_val
-                    elif pd.notna(cell_val):
-                        val_s = str(cell_val).strip().lower()
-                        if val_s in ("true", "1", "1.0", "verdadeiro", "v", "sim", "s", "x"):
-                            is_presente = True
-                    if is_presente:
-                        horas_presentes += enc.horas
-
+                horas_presentes = sum(enc.horas for enc in encontros if detalhes_presenca.get(enc.nome_coluna, False))
                 freq_calc = round((horas_presentes / carga_horaria_calc) * 100)
             else:
                 freq_calc = 100
@@ -371,6 +384,7 @@ def read_and_validate_spreadsheet(
             horas_presentes=horas_presentes,
             horas_totais=carga_horaria_calc,
             frequencia_minima=frequencia_minima,
+            detalhes_presenca=detalhes_presenca if detalhes_presenca else None,
         )
         alunos.append(aluno)
 

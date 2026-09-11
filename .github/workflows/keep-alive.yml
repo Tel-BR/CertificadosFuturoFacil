@@ -1,0 +1,46 @@
+name: Keep-Alive Validador Futuro Fácil
+
+on:
+  schedule:
+    # Executa a cada 6 horas todos os dias (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Permite disparo manual direto pela aba Actions do GitHub
+
+jobs:
+  ping-keep-alive:
+    name: Ping e Verificação de Status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Executar Ping no Streamlit Cloud
+        run: |
+          APP_URL="https://certificados-futurofacil.streamlit.app"
+          HEALTH_URL="${APP_URL}/_stcore/health"
+          USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+          echo "=========================================================="
+          echo "Disparando Ping de Keep-Alive para: $APP_URL"
+          echo "Data/Hora da Execução: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "=========================================================="
+
+          # Tenta o endpoint de health check do Streamlit
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -A "$USER_AGENT" --connect-timeout 20 --max-time 45 "$HEALTH_URL" || true)
+
+          echo "Resposta HTTP do Healthcheck: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ SUCESSO: A aplicação está ATIVA e respondendo normalmente!"
+          else
+            echo "⚠️ AVISO: Endpoint de health retornou HTTP $HTTP_STATUS. Testando rota raiz..."
+            ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -A "$USER_AGENT" --connect-timeout 20 --max-time 45 "$APP_URL/" || true)
+            echo "Resposta HTTP da Rota Raiz: $ROOT_STATUS"
+
+            if [ "$ROOT_STATUS" = "200" ]; then
+              echo "✅ SUCESSO: A rota raiz respondeu 200 OK. Aplicação ativa!"
+            elif [ "$ROOT_STATUS" = "404" ] || [ "$ROOT_STATUS" = "403" ]; then
+              echo "❌ ERRO: O aplicativo pode não existir ou a URL está incorreta (HTTP $ROOT_STATUS)."
+              echo "Verifique se o subdomínio no Streamlit Cloud está exatamente como 'certificados-futurofacil'."
+              exit 1
+            else
+              echo "ℹ️ INFO: Resposta HTTP $ROOT_STATUS recebida. O servidor pode estar em processo de acordar ou hibernando."
+            fi
+          fi

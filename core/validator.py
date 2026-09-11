@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 PREPOSICOES = {"de", "da", "do", "dos", "das", "e"}
 
@@ -20,6 +20,23 @@ class ValidacaoAluno:
     frequencia: int = 100
     horas_presentes: Optional[int] = None
     horas_totais: Optional[int] = None
+    detalhes_presenca: Optional[Dict[str, bool]] = None
+    cpf_invalido_ignorado: bool = False
+
+    @property
+    def tem_erro_cadastral(self) -> bool:
+        """Indica se há erro impeditivo de cadastro (nome inválido ou CPF obrigatório ausente/inválido)."""
+        return any("Nome" in err or "CPF" in err for err in self.erros)
+
+    @property
+    def tem_erro_frequencia(self) -> bool:
+        """Indica se o aluno está abaixo da frequência mínima."""
+        return any("Frequência" in err for err in self.erros)
+
+    @property
+    def is_apto_emissao(self) -> bool:
+        """Aluno apto a receber certificado: dados cadastrais válidos e frequência suficiente."""
+        return self.is_valido and not self.tem_erro_frequencia
 
     # Aliases de conveniência para compatibilidade com inglês
     @property
@@ -186,11 +203,14 @@ def validar_aluno(
     horas_presentes: Optional[int] = None,
     horas_totais: Optional[int] = None,
     frequencia_minima: int = 75,
+    detalhes_presenca: Optional[Dict[str, bool]] = None,
+    permitir_cpf_invalido_como_sem_cpf: bool = False,
 ) -> ValidacaoAluno:
     """
     Valida e normaliza os dados de um Aluno.
     Quando cpf_obrigatorio=False (padrão flexível), aceita CPF em branco/vazio.
     Se o CPF for fornecido, a validação matemática de 11 dígitos continua obrigatória.
+    Recupera automaticamente zeros à esquerda suprimidos pelo Excel.
     Aplica a regra de frequência mínima (padrão 75%).
     Exige nome completo (mínimo de duas palavras: nome e sobrenome).
     Retorna uma instância de ValidacaoAluno com status e mensagens de erro.
@@ -204,7 +224,13 @@ def validar_aluno(
         erros.append("Nome do aluno deve conter nome e sobrenome (mínimo de duas palavras).")
 
     cpf_limpo = clean_cpf(cpf)
+    # Recuperação resiliente de zeros à esquerda suprimidos pelo Excel (ex: 8, 9 ou 10 dígitos)
+    if cpf_limpo and len(cpf_limpo) in (8, 9, 10):
+        candidato_zfill = cpf_limpo.zfill(11)
+        if validate_cpf(candidato_zfill):
+            cpf_limpo = candidato_zfill
 
+    cpf_invalido_ignorado = False
     if not cpf_limpo:
         if cpf_obrigatorio:
             erros.append("CPF do aluno é obrigatório.")
@@ -213,9 +239,19 @@ def validar_aluno(
     else:
         cpf_valido = validate_cpf(cpf_limpo)
         if not cpf_valido:
-            erros.append("CPF inválido ou com dígitos verificadores incorretos.")
-        formatado = format_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
-        mascarado = mask_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
+            if permitir_cpf_invalido_como_sem_cpf and not cpf_obrigatorio:
+                # Trata como emissão sem CPF para não travar a turma
+                cpf_invalido_ignorado = True
+                cpf_limpo = ""
+                formatado = ""
+                mascarado = ""
+            else:
+                erros.append("CPF inválido ou com dígitos verificadores incorretos.")
+                formatado = format_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
+                mascarado = mask_cpf(cpf_limpo) if len(cpf_limpo) == 11 else cpf_limpo
+        else:
+            formatado = format_cpf(cpf_limpo)
+            mascarado = mask_cpf(cpf_limpo)
 
     # Validação de frequência
     freq_int = 100
@@ -238,6 +274,8 @@ def validar_aluno(
         frequencia=freq_int,
         horas_presentes=horas_presentes,
         horas_totais=horas_totais,
+        detalhes_presenca=detalhes_presenca,
+        cpf_invalido_ignorado=cpf_invalido_ignorado,
     )
 
 

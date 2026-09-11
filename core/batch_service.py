@@ -38,6 +38,7 @@ class BatchEmissionResult:
     excel_bytes: bytes
     individual_pdfs: Dict[str, bytes]
     total_emitidos: int
+    lote_id: Optional[int] = None
 
 
 def _aluno_to_slug(nome: str) -> str:
@@ -89,17 +90,20 @@ def emitir_lote_certificados(
     manager: Optional[LivroRegistroManager] = None,
     zip_output_path_or_buffer: Optional[Union[str, Path, io.BytesIO]] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    encontros: Optional[List[Any]] = None,
+    identificador_turma: Optional[str] = None,
 ) -> BatchEmissionResult:
     """
     Processa e emite um lote completo de certificados para os alunos informados.
     
     Etapas executadas:
     1. Filtra apenas alunos válidos (caso haja dicionários brutos, normaliza e valida).
-    2. Registra o lote no banco relacional gerando sequenciamento atômico de Livro, Folha e Registro.
-    3. Gera cada PDF individual duplex.
-    4. Gera o documento consolidado intercalado para gráfica (2 * N páginas).
-    5. Exporta o Livro de Registro atualizado em Excel.
-    6. Monta o pacote ZIP final contendo todos os arquivos.
+    2. Cria o registro da turma/lote em turmas_lotes.
+    3. Registra o lote no banco relacional gerando sequenciamento atômico de Livro, Folha e Registro.
+    4. Gera cada PDF individual duplex.
+    5. Gera o documento consolidado intercalado para gráfica (2 * N páginas).
+    6. Exporta o Livro de Registro atualizado em Excel.
+    7. Monta o pacote ZIP final contendo todos os arquivos.
     """
     if config is None:
         config = CertificateRenderConfig()
@@ -129,8 +133,20 @@ def emitir_lote_certificados(
     if progress_callback:
         progress_callback(0, total_alunos, "Registrando assentos no Livro de Registro Digital...")
 
-    # Registro atômico no banco
-    registros = manager.register_batch(alunos_validos, curso)
+    # Criação da turma/lote no banco de dados
+    lote_id = None
+    try:
+        lote_id = manager.criar_turma_lote(
+            curso=curso,
+            total_alunos=total_alunos,
+            encontros=encontros,
+            identificador=identificador_turma,
+        )
+    except Exception:
+        pass
+
+    # Registro atômico no banco com vinculação ao lote
+    registros = manager.register_batch(alunos_validos, curso, lote_id=lote_id)
 
     # Geração dos PDFs individuais
     individual_pdfs: Dict[str, bytes] = {}
@@ -179,4 +195,5 @@ def emitir_lote_certificados(
         excel_bytes=excel_bytes,
         individual_pdfs=individual_pdfs,
         total_emitidos=len(registros),
+        lote_id=lote_id,
     )

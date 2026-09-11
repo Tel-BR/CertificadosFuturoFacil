@@ -62,6 +62,15 @@ git push -u origin main
 4. Clique em **"Deploy!"**.
 5. Aguarde o processo de build do container (instalação dos pacotes de `requirements.txt`). Em cerca de 1 a 2 minutos, a aplicação estará ativa online.
 
+### Passo 4.1: Ajuste da URL no Streamlit Cloud (Caso tenha sido criado como `certificadosfuturofacil`)
+Se o app foi criado sem o hífen (`certificadosfuturofacil`):
+1. Acesse o seu aplicativo no Streamlit Cloud (`https://certificadosfuturofacil.streamlit.app/`).
+2. Se o app estiver em modo de sono, clique em **"Yes, get this app back up!"**.
+3. No canto inferior direito, clique em **Settings** (ou no menu de três pontos no canto superior direito > **Settings**).
+4. Na aba **General**, localize o campo **App URL**.
+5. Altere o subdomínio para: **`certificados-futurofacil`** (com hífen).
+6. Clique em **Save changes**. A URL oficial passará a ser `https://certificados-futurofacil.streamlit.app`, alinhada perfeitamente com os QR Codes emitidos.
+
 ---
 
 ## 5. Persistência de Dados e Configurações
@@ -93,3 +102,28 @@ Para aplicar melhorias, correções ou novos recursos na versão em produção:
    git push origin main
    ```
 4. O Streamlit Community Cloud detecta o novo commit instantaneamente e aplica a atualização em segundo plano sem perda de disponibilidade.
+
+---
+
+## 7. Mitigação de Hibernação (Sleep), Keep-Alive e Auditoria LGPD
+
+### Comportamento Nativo do Streamlit Cloud
+No plano Community Cloud gratuito, após alguns dias sem tráfego de usuários, a aplicação entra em modo de repouso ("*This app has gone to sleep due to inactivity*"). 
+
+### Estratégia Híbrida Adotada
+1. **Keep-Alive Inteligente (GitHub Actions)**:
+   - Um workflow agendado (`.github/workflows/keep-alive.yml`) executa pings HTTP a cada 6 horas (`0 */6 * * *`) simulando requisição real no endpoint de saúde.
+   - Isso mantém a aplicação aquecida e previne que o container entre em hibernação profunda durante o ciclo de uso.
+   - O workflow pode ser acionado manualmente na aba **Actions** do GitHub via *workflow_dispatch*.
+
+2. **Legenda Educativa no Certificado (PDF)**:
+   - No verso de cada certificado impresso ou digital, a legenda sob o QR Code informa:
+     > *"Validação digital pública via QR Code."*
+     > *"Servidor em nuvem com inicialização sob demanda (~30s)."*
+   - Caso um avaliador ou recrutador acesse no momento em que o servidor esteja acordando, a expectativa é alinhada com profissionalismo institucional.
+
+3. **Auditoria de Validações e Wakeups**:
+   - Todas as consultas de validação (sucesso ou código inexistente) e eventos de inicialização do servidor são gravados na tabela de auditoria.
+   - **Conformidade com a LGPD**: O número de CPF **nunca** é registrado no log de auditoria pública. Apenas o nome do aluno, curso e data/hora são preservados em caso de validação autêntica.
+   - O Emissor pode auditar e exportar esse histórico para Excel na aba **📊 Auditoria de Validações & Acessos** do painel administrativo.
+

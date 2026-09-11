@@ -436,3 +436,61 @@ def test_reset_database(tmp_path):
     manager.reset_database(initial_livro=2, initial_folha=10, initial_registro=110)
     assert len(manager.list_all_certificates()) == 0
     assert manager.get_next_numbers() == (2, 10, 110)
+
+
+def test_auditoria_consultas_e_wakeups(tmp_path):
+    from core.registry import LivroRegistroManager
+
+    db_path = tmp_path / "audit_test.db"
+    manager = LivroRegistroManager(db_url_or_path=str(db_path))
+
+    # Inicialmente vazio
+    stats = manager.obter_estatisticas_auditoria()
+    assert stats["total_consultas"] == 0
+    assert stats["total_validos"] == 0
+    assert stats["total_invalidos"] == 0
+
+    # Registra consultas
+    manager.registrar_consulta_validacao(
+        codigo="A" * 64,
+        status="VALIDO",
+        aluno_nome="Carlos Silva",
+        curso_nome="Python Básico",
+    )
+    manager.registrar_consulta_validacao(
+        codigo="B" * 64,
+        status="NAO_ENCONTRADO",
+    )
+
+    stats = manager.obter_estatisticas_auditoria()
+    assert stats["total_consultas"] == 2
+    assert stats["total_validos"] == 1
+    assert stats["total_invalidos"] == 1
+
+    historico = manager.obter_historico_consultas()
+    assert len(historico) == 2
+    assert historico[0]["status"] == "NAO_ENCONTRADO"
+    assert historico[1]["status"] == "VALIDO"
+    assert historico[1]["aluno_nome"] == "Carlos Silva"
+    assert historico[1]["curso_nome"] == "Python Básico"
+
+    # Registra eventos de wakeup
+    manager.registrar_evento_wakeup("INICIALIZACAO_SISTEMA", "Ping Keep-Alive")
+    wakeups = manager.obter_historico_wakeups()
+    assert len(wakeups) == 1
+    assert wakeups[0]["tipo_evento"] == "INICIALIZACAO_SISTEMA"
+    assert wakeups[0]["detalhes"] == "Ping Keep-Alive"
+
+    stats = manager.obter_estatisticas_auditoria()
+    assert stats["ultimo_wakeup"] != "Nenhum registrado"
+
+    # Exportação para Excel
+    excel_io = manager.exportar_historico_consultas_excel()
+    assert excel_io is not None
+    wb = openpyxl.load_workbook(excel_io)
+    ws = wb["Auditoria de Validações"]
+    assert ws.cell(row=1, column=1).value == "ID"
+    assert ws.cell(row=2, column=4).value == "NAO_ENCONTRADO"
+    assert ws.cell(row=3, column=4).value == "VALIDO"
+    assert ws.cell(row=3, column=5).value == "Carlos Silva"
+

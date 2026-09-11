@@ -778,13 +778,21 @@ def render_reverso(
     qr_y = card_qr_y + card_qr_h - qr_size - 38
     _draw_vector_qr_code(c, qr_x, qr_y, qr_size, validation_url, fill_color=primary_col)
 
-    # Instrução de escaneamento
-    c.setFont(get_font_regular(), 7.5)
-    c.setFillColor(colors.HexColor("#64748B"))
+    # Instrução de escaneamento e inicialização sob demanda
+    c.setFont(get_font_bold(), 7.2)
+    c.setFillColor(colors.HexColor("#475569"))
     c.drawCentredString(
         col_right_x + col_right_w / 2.0,
         qr_y - 12,
-        "Aponte a câmera para validação instantânea",
+        "Validação digital pública via QR Code",
+    )
+
+    c.setFont(get_font_regular(), 6.5)
+    c.setFillColor(colors.HexColor("#64748B"))
+    c.drawCentredString(
+        col_right_x + col_right_w / 2.0,
+        qr_y - 22,
+        "Servidor em nuvem com inicialização sob demanda (~30s)",
     )
 
     # Caixa do Código de Autenticidade (SHA-256)

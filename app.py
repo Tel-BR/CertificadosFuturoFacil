@@ -191,6 +191,16 @@ def render_pdf_to_images(pdf_bytes: bytes) -> List[bytes]:
 # Verifica query parameter de validação pública
 query_validar = st.query_params.get("validar") or st.query_params.get("codigo")
 
+# Registra evento de wakeup na primeira execução da sessão/container
+if "wakeup_registrado" not in st.session_state:
+    try:
+        mgr = get_manager()
+        tipo = "CONSULTA_QR_CODE" if query_validar else "ACESSO_DIRETO"
+        mgr.registrar_evento_wakeup(tipo_evento=tipo, detalhes="Container acordado / nova sessão iniciada")
+        st.session_state["wakeup_registrado"] = True
+    except Exception:
+        pass
+
 # Menu de navegação lateral
 if Path("assets/logo.svg").exists():
     st.sidebar.image("assets/logo.svg", use_container_width=True)
@@ -261,6 +271,25 @@ if modo_selecionado == "🔍 Validação Pública":
         else:
             manager = get_manager()
             resultado: ResultadoValidacaoPublica = validar_certificado(codigo_para_validar, manager=manager)
+
+            # Auditoria de Consulta Pública (LGPD Compliant: sem CPF)
+            cache_key = f"audit_logged_{codigo_para_validar}"
+            if cache_key not in st.session_state:
+                if resultado.autentico:
+                    manager.registrar_consulta_validacao(
+                        codigo=codigo_para_validar,
+                        status="VALIDO",
+                        aluno_nome=resultado.aluno_nome,
+                        curso_nome=resultado.curso_nome,
+                    )
+                else:
+                    manager.registrar_consulta_validacao(
+                        codigo=codigo_para_validar,
+                        status="NAO_ENCONTRADO",
+                        aluno_nome=None,
+                        curso_nome=None,
+                    )
+                st.session_state[cache_key] = True
 
             if resultado.autentico:
                 st.markdown(
@@ -362,9 +391,11 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
     st.markdown("<h1 class='main-header'>Painel de Emissão e Auditoria</h1>", unsafe_allow_html=True)
     st.markdown(f"<div class='sub-header'>{inst_cfg.nome_fantasia.upper()} · {inst_cfg.razao_social} (CNPJ: {inst_cfg.cnpj})</div>", unsafe_allow_html=True)
 
-    tab_emissao, tab_livro, tab_config = st.tabs([
+    tab_emissao, tab_diario, tab_livro, tab_auditoria, tab_config = st.tabs([
         "🎓 Emissão de Certificados",
+        "📋 Diário de Frequência & Turmas",
         "📖 Livro de Registro Digital",
+        "📊 Auditoria de Validações & Acessos",
         "⚙️ Configurações da Instituição",
     ])
 
@@ -526,13 +557,21 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     st.info("Você pode **conferir ou ajustar Nome, CPF e Frequência diretamente na tabela abaixo** antes de gerar os certificados:")
 
                 # Tabela interativa SEMPRE editável para conferência prévia total
+                def _status_aluno(a: ValidacaoAluno) -> str:
+                    if a.is_apto_emissao:
+                        return "✅ Apto para Emissão"
+                    elif a.tem_erro_frequencia and not a.tem_erro_cadastral:
+                        return f"🟡 Freq. Baixa ({a.frequencia}% < {freq_minima_input}%) - Não certificado"
+                    else:
+                        return "❌ Erro Cadastral: " + "; ".join(a.erros)
+
                 df_edit = pd.DataFrame([
                     {
                         "Linha": idx,
                         "Nome": a.nome,
                         "CPF": a.cpf if a.cpf else "",
                         "Frequência (%)": a.frequencia,
-                        "Status": "✅ Válido" if a.is_valido else "❌ Erro: " + "; ".join(a.erros),
+                        "Status": _status_aluno(a),
                     }
                     for idx, a in enumerate(res_auditoria.alunos, start=2)
                 ])
@@ -545,27 +584,42 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 )
 
                 # Revalida os dados editados em tempo real
-                alunos_revalidados = []
-                for _, row in edited_df.iterrows():
+                alunos_revalidados: List[ValidacaoAluno] = []
+                for (idx_aluno, orig_aluno), (_, row) in zip(enumerate(res_auditoria.alunos), edited_df.iterrows()):
                     val = validar_aluno(
-                        row["Nome"],
-                        row["CPF"],
+                        str(row["Nome"]).strip(),
+                        str(row["CPF"]).strip() if pd.notna(row["CPF"]) else None,
                         cpf_obrigatorio=cpf_obrigatorio,
                         frequencia=row["Frequência (%)"],
                         frequencia_minima=int(freq_minima_input),
+                        detalhes_presenca=orig_aluno.detalhes_presenca,
+                        permitir_cpf_invalido_como_sem_cpf=not cpf_obrigatorio,
                     )
                     alunos_revalidados.append(val)
 
-                qtd_invalidos_apos_edicao = sum(1 for a in alunos_revalidados if not a.is_valido)
+                erros_cadastrais = [a for a in alunos_revalidados if a.tem_erro_cadastral]
+                alunos_aptos = [a for a in alunos_revalidados if a.is_apto_emissao]
+                alunos_reprovados_freq = [a for a in alunos_revalidados if a.tem_erro_frequencia and not a.tem_erro_cadastral]
 
-                if qtd_invalidos_apos_edicao == 0 and len(alunos_revalidados) > 0:
-                    st.success("Todos os alunos foram validados e estão prontos para emissão.")
-                    alunos_para_emissao = alunos_revalidados
-                    is_lote_valido = True
-                else:
-                    st.error(f"Ainda restam {qtd_invalidos_apos_edicao} linha(s) com erros. Corrija na tabela acima para liberar a emissão.")
-                    alunos_para_emissao = alunos_revalidados
+                if len(erros_cadastrais) > 0:
+                    st.error(f"❌ Há {len(erros_cadastrais)} aluno(s) com erro cadastral (ex: nome sem sobrenome ou CPF inválido obrigatório). Corrija na tabela acima para liberar a emissão.")
+                    alunos_para_emissao = []
                     is_lote_valido = False
+                elif len(alunos_aptos) == 0:
+                    st.warning(f"⚠️ Nenhum aluno atingiu a frequência mínima de {freq_minima_input}% para emissão de certificado. Se necessário, você pode retificar a Frequência (%) na tabela acima.")
+                    alunos_para_emissao = []
+                    is_lote_valido = False
+                else:
+                    is_lote_valido = True
+                    alunos_para_emissao = alunos_aptos
+                    if len(alunos_reprovados_freq) > 0:
+                        st.info(
+                            f"ℹ️ **Emissão Não-Bloqueante**: {len(alunos_aptos)} aluno(s) serão certificados. "
+                            f"{len(alunos_reprovados_freq)} aluno(s) com frequência abaixo de {freq_minima_input}% "
+                            "não receberão certificado nesta emissão, mas constarão arquivados no Diário de Classe."
+                        )
+                    else:
+                        st.success(f"✅ Todos os {len(alunos_aptos)} alunos estão válidos e aptos para emissão!")
 
         st.markdown("---")
         st.subheader("2. Identidade Visual e Assinatura")
@@ -747,13 +801,13 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     config=config_render,
                     manager=manager,
                     progress_callback=callback_progresso,
+                    encontros=res_auditoria.encontros_detectados if ("res_auditoria" in locals() and res_auditoria) else None,
+                    identificador_turma=f"{curso_nome.strip()} ({data_conclusao})",
                 )
 
                 prog_bar.progress(100)
                 status_txt.text("Emissão concluída com sucesso!")
                 st.balloons()
-
-                st.success(f"Lote de {lote_resultado.total_emitidos} certificados emitido com sucesso.")
 
                 # Nomenclatura semântica: certificados_{slug}_{data}.zip
                 slug_curso = re.sub(r"[^\w\-]", "_", curso_nome.strip().lower())
@@ -761,14 +815,147 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 data_slug = datetime.now().strftime("%Y-%m-%d")
                 zip_filename = f"certificados_{slug_curso}_{data_slug}.zip"
 
-                st.download_button(
-                    label="Baixar Pacote Completo (.ZIP)",
-                    data=lote_resultado.zip_bytes,
-                    file_name=zip_filename,
-                    mime="application/zip",
-                    type="primary",
-                    help="O pacote ZIP contém todos os PDFs individuais, o PDF duplex para gráfica e o Excel de controle.",
+                st.session_state["ultimo_lote_zip"] = {
+                    "bytes": lote_resultado.zip_bytes,
+                    "filename": zip_filename,
+                    "total": lote_resultado.total_emitidos,
+                    "lote_id": lote_resultado.lote_id,
+                    "curso_nome": curso_nome.strip(),
+                }
+
+        if "ultimo_lote_zip" in st.session_state:
+            lote_salvo = st.session_state["ultimo_lote_zip"]
+            st.markdown("#### 📦 Arquivo Pronto para Download")
+            st.success(f"Pacote de **{lote_salvo['total']} certificado(s)** da turma *{lote_salvo['curso_nome']}* gerado com sucesso!")
+            st.download_button(
+                label=f"⬇️ Baixar Pacote Completo ({lote_salvo['filename']})",
+                data=lote_salvo["bytes"],
+                file_name=lote_salvo["filename"],
+                mime="application/zip",
+                type="primary",
+                key="btn_download_ultimo_lote",
+                help="O pacote ZIP contém todos os PDFs individuais, o PDF duplex para gráfica e o Excel de controle.",
+            )
+
+    # --------------------------------------------------------------------------
+    # ABA 2: Diário de Frequência & Turmas
+    # --------------------------------------------------------------------------
+    with tab_diario:
+        st.subheader("Diário de Frequência & Histórico de Turmas")
+        st.caption("Consulte as presenças aula a aula, exporte o Diário de Classe oficial para assinatura e retifique faltas por justificativa legal.")
+
+        turmas = manager.obter_turmas_lotes()
+        if not turmas:
+            st.info("Nenhuma turma com diário registrado até o momento. Ao emitir um lote de certificados na aba anterior, a turma e seus encontros serão automaticamente arquivados aqui.")
+        else:
+            opcoes_turmas = {
+                t["id"]: f"Turma #{t['id']}: {t['identificador_turma'] or t['curso_nome']} ({t['data_inicio'] or ''} a {t['data_conclusao'] or ''}) - {t['total_alunos']} aluno(s)"
+                for t in turmas
+            }
+            turma_selecionada_id = st.selectbox(
+                "Selecione a Turma / Lote:",
+                options=list(opcoes_turmas.keys()),
+                format_func=lambda tid: opcoes_turmas[tid],
+                key="diario_turma_select",
+            )
+
+            if turma_selecionada_id:
+                dados_diario = manager.obter_diario_turma(turma_selecionada_id)
+                turma_info = dados_diario["turma"]
+                encontros_info = dados_diario.get("encontros", [])
+                alunos_info = dados_diario.get("alunos", [])
+
+                col_dt1, col_dt2, col_dt3, col_dt4 = st.columns(4)
+                col_dt1.metric("Total de Alunos", len(alunos_info))
+                col_dt2.metric("Carga Horária", f"{turma_info.get('carga_horaria', 0)}h")
+                col_dt3.metric("Encontros Registrados", len(encontros_info))
+                media_freq = (
+                    int(round(sum(a["frequencia"] for a in alunos_info) / len(alunos_info)))
+                    if alunos_info else 0
                 )
+                col_dt4.metric("Frequência Média", f"{media_freq}%")
+
+                st.markdown("##### Grade de Presenças da Turma")
+                if alunos_info:
+                    # Constrói tabela para visualização
+                    tabela_dados = []
+                    for idx, a in enumerate(alunos_info, 1):
+                        linha = {
+                            "Nº": idx,
+                            "Aluno": a["aluno_nome"],
+                            "CPF (LGPD)": a["aluno_cpf_mascarado"],
+                            "Freq. (%)": f"{a['frequencia']}%",
+                            "Situação": "APROVADO" if a["frequencia"] >= 75 else "REPROVADO",
+                        }
+                        if encontros_info:
+                            p_map = a.get("presencas", {})
+                            for enc in encontros_info:
+                                col_lbl = enc.get("data_str") or enc.get("nome_coluna")
+                                col_k = enc.get("nome_coluna")
+                                linha[col_lbl] = "✔️" if p_map.get(col_k, False) else "❌"
+                        tabela_dados.append(linha)
+
+                    df_diario = pd.DataFrame(tabela_dados)
+                    st.dataframe(df_diario, use_container_width=True)
+
+                    # Exportação oficial em Excel
+                    excel_buf = io.BytesIO()
+                    manager.exportar_diario_classe_excel(
+                        turma_selecionada_id,
+                        instituicao_nome=inst_cfg.nome_fantasia,
+                        razao_social=inst_cfg.razao_social,
+                        cnpj=inst_cfg.cnpj,
+                        destination=excel_buf,
+                    )
+                    excel_buf.seek(0)
+                    st.download_button(
+                        label="📄 Baixar Diário de Classe Oficial (.xlsx)",
+                        data=excel_buf.getvalue(),
+                        file_name=f"diario_classe_turma_{turma_selecionada_id}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Gera o arquivo Excel com grade de presença aula a aula e termo de encerramento para assinatura do instrutor.",
+                    )
+
+                    st.markdown("---")
+                    st.markdown("##### ⚖️ Retificação de Falta por Motivo Legal / Administrativo")
+                    st.caption("Permite retificar a frequência de um aluno mediante justificativa comprobatória (ex: atestado médico), mantendo histórico de auditoria.")
+
+                    aluno_retificar = st.selectbox(
+                        "Selecione o aluno para retificar:",
+                        options=alunos_info,
+                        format_func=lambda a: f"{a['aluno_nome']} (CPF: {a['aluno_cpf_mascarado']}) - Atual: {a['frequencia']}%",
+                        key="select_aluno_retificar",
+                    )
+
+                    if aluno_retificar:
+                        with st.form("form_retificar_falta"):
+                            col_rf1, col_rf2 = st.columns([1, 2])
+                            with col_rf1:
+                                nova_freq = st.number_input(
+                                    "Nova Frequência (%):",
+                                    min_value=0,
+                                    max_value=100,
+                                    value=max(75, int(aluno_retificar["frequencia"])),
+                                    step=5,
+                                )
+                            with col_rf2:
+                                motivo_ret = st.text_input(
+                                    "Justificativa Legal / Motivo:*",
+                                    placeholder="Ex: Atestado médico apresentado em 10/09/2026 - Abono de falta amparado por lei.",
+                                )
+
+                            btn_salvar_ret = st.form_submit_button("Salvar Retificação no Registro", type="primary")
+                            if btn_salvar_ret:
+                                if not motivo_ret.strip():
+                                    st.error("A justificativa legal é obrigatória para retificar a frequência.")
+                                else:
+                                    manager.retificar_frequencia_aluno(
+                                        codigo_autenticidade=aluno_retificar["codigo_autenticidade"],
+                                        nova_frequencia=int(nova_freq),
+                                        justificativa=motivo_ret.strip(),
+                                    )
+                                    st.success(f"Frequência de {aluno_retificar['aluno_nome']} retificada para {nova_freq}% com sucesso!")
+                                    st.rerun()
 
     # --------------------------------------------------------------------------
     # ABA 2: Livro de Registro Digital
@@ -930,7 +1117,85 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 st.rerun()
 
     # --------------------------------------------------------------------------
-    # ABA 3: Configurações da Instituição
+    # ABA 3: Auditoria de Validações & Acessos (LGPD Compliant)
+    # --------------------------------------------------------------------------
+    with tab_auditoria:
+        st.subheader("Auditoria de Consultas Públicas e Monitoramento de Servidor")
+        st.write(
+            "Acompanhe em tempo real as tentativas de validação pública de certificados via QR Code ou código SHA-256, "
+            "bem como os registros de inicialização (wakeups) do servidor em nuvem. "
+            "Para estrita conformidade com a LGPD, o número de CPF **não** é registrado neste histórico."
+        )
+
+        stats = manager.obter_estatisticas_auditoria()
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        with col_s1:
+            st.metric("Total de Consultas", stats["total_consultas"])
+        with col_s2:
+            st.metric("Validações Autênticas", stats["total_validos"])
+        with col_s3:
+            st.metric("Códigos Inválidos/Não Encontrados", stats["total_invalidos"])
+        with col_s4:
+            st.metric("Último Wakeup/Inicialização", stats["ultimo_wakeup"])
+
+        st.markdown("---")
+
+        subtab_consultas, subtab_wakeups = st.tabs([
+            "🔍 Histórico de Validações Públicas",
+            "⚡ Eventos de Wakeup & Inicialização",
+        ])
+
+        with subtab_consultas:
+            consultas = manager.obter_historico_consultas(limite=200)
+            if not consultas:
+                st.info("Nenhuma consulta de validação foi realizada até o momento.")
+            else:
+                col_btn_export, _ = st.columns([1, 2])
+                with col_btn_export:
+                    excel_auditoria = manager.exportar_historico_consultas_excel()
+                    if isinstance(excel_auditoria, io.BytesIO):
+                        excel_auditoria_bytes = excel_auditoria.getvalue()
+                    else:
+                        with open(str(excel_auditoria), "rb") as f:
+                            excel_auditoria_bytes = f.read()
+
+                    st.download_button(
+                        label="📥 Exportar Histórico para Excel (.xlsx)",
+                        data=excel_auditoria_bytes,
+                        file_name=f"auditoria_validacoes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        use_container_width=True,
+                    )
+
+                df_consultas = pd.DataFrame(consultas)
+                df_consultas.columns = ["ID", "Data/Hora", "Código Consultado", "Status", "Aluno", "Curso"]
+                st.dataframe(
+                    df_consultas,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        with subtab_wakeups:
+            wakeups = manager.obter_historico_wakeups(limite=50)
+            if not wakeups:
+                st.info("Nenhum evento de wakeup registrado.")
+            else:
+                df_wakeups = pd.DataFrame(wakeups)
+                df_wakeups.columns = ["ID", "Data/Hora", "Tipo de Evento", "Detalhes"]
+                st.dataframe(
+                    df_wakeups,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            st.caption(
+                "💡 **Dica de Infraestrutura**: O servidor do Streamlit Community Cloud hiberna após inatividade. "
+                "O workflow de Keep-Alive no GitHub Actions executa pings a cada 6 horas para manter a prontidão do validador."
+            )
+
+    # --------------------------------------------------------------------------
+    # ABA 4: Configurações da Instituição
     # --------------------------------------------------------------------------
     with tab_config:
         st.subheader("Dados Cadastrais da Empresa e Parâmetros Padrão")
