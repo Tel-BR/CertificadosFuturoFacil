@@ -75,68 +75,185 @@ from core.validator_service import (
 # ==============================================================================
 
 st.set_page_config(
-    page_title="Certificados Futuro Fácil",
-    page_icon="🎓",
+    page_title="Certificados | Futuro Fácil",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Estilização CSS customizada oficial
+# Estilização CSS institucional oficial (Futuro Fácil)
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap');
+
+    html, body, [class*="css"], [class*="st-"], .stApp {
+        font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    }
+
+    /* Chrome e Branding do Streamlit */
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    header[data-testid="stHeader"] { background-color: transparent !important; }
+    [data-testid="stToolbar"] { visibility: hidden; }
+    [data-testid="stDecoration"] { display: none; }
+    [data-testid="stStatusWidget"] { display: none; }
+
+    /* Tipografia e Cabeçalhos */
     .main-header {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        color: #0E7490;
-        font-weight: 800;
-        margin-bottom: 0px;
+        font-family: 'Ubuntu', sans-serif !important;
+        color: #0E7490 !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.5px;
+        margin-bottom: 2px;
     }
     .sub-header {
-        color: #64748B;
-        font-size: 14px;
-        font-weight: 600;
-        letter-spacing: 1px;
-        margin-top: -5px;
-        margin-bottom: 20px;
+        color: #64748B !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        margin-top: -4px;
+        margin-bottom: 24px;
     }
+
+    /* Botões Oficiais */
+    button[kind="primary"], .stButton > button[type="primary"] {
+        background-color: #0E7490 !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 0.55rem 1.25rem !important;
+        transition: all 0.2s ease !important;
+        box-shadow: 0 4px 12px rgba(14, 116, 144, 0.2) !important;
+    }
+    button[kind="primary"]:hover, .stButton > button[type="primary"]:hover {
+        background-color: #155E75 !important;
+        box-shadow: 0 6px 16px rgba(14, 116, 144, 0.3) !important;
+        transform: translateY(-1px);
+    }
+    button[kind="secondary"], .stButton > button:not([type="primary"]) {
+        border: 1px solid #E2DFDA !important;
+        border-radius: 8px !important;
+        background-color: #FFFFFF !important;
+        color: #1B1918 !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
+    }
+    button[kind="secondary"]:hover, .stButton > button:not([type="primary"]):hover {
+        border-color: #CBD5E1 !important;
+        background-color: #FAF7F1 !important;
+        color: #0E7490 !important;
+    }
+
+    /* Cartões de Métricas e Conteúdo */
     .metric-card {
-        background-color: #F8FAFC;
-        border: 1px solid #E2E8F0;
-        border-radius: 8px;
-        padding: 15px;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2DFDA !important;
+        border-radius: 10px !important;
+        padding: 18px !important;
         text-align: center;
+        box-shadow: 0 2px 8px rgba(27, 25, 24, 0.04) !important;
     }
+
+    /* Badges Notariais */
     .badge-valid {
-        background-color: #DCFCE7;
-        color: #166534;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
-        font-size: 12px;
+        background-color: #DCFCE7 !important;
+        color: #166534 !important;
+        padding: 4px 10px !important;
+        border-radius: 6px !important;
+        font-weight: 700 !important;
+        font-size: 12px !important;
+        letter-spacing: 0.5px;
+        border: 1px solid #BBF7D0 !important;
     }
     .badge-invalid {
-        background-color: #FEE2E2;
-        color: #991B1B;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
-        font-size: 12px;
+        background-color: #FEE2E2 !important;
+        color: #991B1B !important;
+        padding: 4px 10px !important;
+        border-radius: 6px !important;
+        font-weight: 700 !important;
+        font-size: 12px !important;
+        letter-spacing: 0.5px;
+        border: 1px solid #FECACA !important;
     }
+
+    /* Cartão Notarial de Validação (Sucesso) */
     .validation-card {
-        background-color: #F0FDF4;
-        border: 2px solid #86EFAC;
-        border-radius: 10px;
-        padding: 24px;
-        margin-top: 15px;
-        margin-bottom: 20px;
+        background-color: #FFFFFF !important;
+        border: 1px solid #BBF7D0 !important;
+        border-left: 6px solid #16A34A !important;
+        border-radius: 8px !important;
+        padding: 24px !important;
+        margin-top: 15px !important;
+        margin-bottom: 24px !important;
+        box-shadow: 0 4px 16px rgba(22, 163, 74, 0.08) !important;
     }
+    .validation-card h3 {
+        color: #15803D !important;
+        font-weight: 700 !important;
+        font-size: 18px !important;
+        margin-top: 0 !important;
+        margin-bottom: 8px !important;
+    }
+    .validation-card p {
+        color: #334155 !important;
+        font-size: 14px !important;
+        line-height: 1.5 !important;
+        margin-bottom: 0 !important;
+    }
+
+    /* Cartão Notarial de Validação (Erro / Não Encontrado) */
     .validation-card-error {
-        background-color: #FEF2F2;
-        border: 2px solid #FCA5A5;
-        border-radius: 10px;
-        padding: 24px;
-        margin-top: 15px;
-        margin-bottom: 20px;
+        background-color: #FFFFFF !important;
+        border: 1px solid #FECACA !important;
+        border-left: 6px solid #DC2626 !important;
+        border-radius: 8px !important;
+        padding: 24px !important;
+        margin-top: 15px !important;
+        margin-bottom: 24px !important;
+        box-shadow: 0 4px 16px rgba(220, 38, 38, 0.08) !important;
+    }
+    .validation-card-error h3 {
+        color: #B91C1C !important;
+        font-weight: 700 !important;
+        font-size: 18px !important;
+        margin-top: 0 !important;
+        margin-bottom: 8px !important;
+    }
+    .validation-card-error p {
+        color: #334155 !important;
+        font-size: 14px !important;
+        line-height: 1.5 !important;
+        margin-bottom: 0 !important;
+    }
+
+    /* Inputs */
+    .stTextInput input {
+        border-radius: 8px !important;
+        border: 1px solid #E2DFDA !important;
+        background-color: #FFFFFF !important;
+        color: #1B1918 !important;
+    }
+    .stTextInput input:focus {
+        border-color: #0E7490 !important;
+        box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.2) !important;
+    }
+
+    /* Abas */
+    button[data-baseweb="tab"] {
+        font-weight: 500 !important;
+        font-size: 14px !important;
+        color: #64748B !important;
+    }
+    button[aria-selected="true"] {
+        color: #0E7490 !important;
+        font-weight: 700 !important;
+    }
+
+    /* Caixas de Alerta */
+    div[data-testid="stAlert"] {
+        border-radius: 8px !important;
     }
     </style>
     """,
@@ -206,13 +323,13 @@ if "wakeup_registrado" not in st.session_state:
 if Path("assets/logo.svg").exists():
     st.sidebar.image("assets/logo.svg", use_container_width=True)
 else:
-    st.sidebar.markdown("### 🎓 Futuro Fácil")
+    st.sidebar.markdown("### Futuro Fácil")
 st.sidebar.caption("Sistema de Certificados Digitais")
 st.sidebar.markdown("---")
 
 modo_selecionado = st.sidebar.radio(
     "Navegação:",
-    options=["🔍 Validação Pública", "🔐 Área do Emissor (Admin)"],
+    options=["Validação Pública", "Área do Emissor (Admin)"],
     index=0 if query_validar else 1 if st.session_state.get("admin_authenticated", False) else 0,
 )
 
@@ -221,7 +338,7 @@ modo_selecionado = st.sidebar.radio(
 # Visão 1: Validação Pública de Autenticidade (QR Code / Rota Pública)
 # ==============================================================================
 
-if modo_selecionado == "🔍 Validação Pública":
+if modo_selecionado == "Validação Pública":
     inst_cfg = load_instituicao_config()
 
     if Path("assets/logo.svg").exists():
@@ -251,13 +368,13 @@ if modo_selecionado == "🔍 Validação Pública":
             st.caption("O código de autenticidade possui 64 caracteres hexadecimais (0-9, A-F) e está impresso no verso do certificado.")
         elif len(codigo_limpo) == 64:
             if all(c in "0123456789ABCDEF" for c in codigo_limpo):
-                st.caption("🟢 **Código com 64 caracteres** (formato válido, pronto para validação).")
+                st.caption("**Código com 64 caracteres** (formato válido, pronto para validação).")
             else:
-                st.caption("⚠️ **64 caracteres**, mas contém caracteres não hexadecimais inválidos.")
+                st.caption("**Atenção:** 64 caracteres informados, mas contém caracteres não hexadecimais inválidos.")
         elif len(codigo_limpo) < 64:
-            st.caption(f"🟡 **{len(codigo_limpo)}/64 caracteres** (faltam {64 - len(codigo_limpo)} caracteres para completar o código).")
+            st.caption(f"**{len(codigo_limpo)}/64 caracteres** (faltam {64 - len(codigo_limpo)} caracteres para completar o código).")
         else:
-            st.caption(f"🔴 **{len(codigo_limpo)}/64 caracteres** (excesso de {len(codigo_limpo) - 64} caracteres).")
+            st.caption(f"**{len(codigo_limpo)}/64 caracteres** (excesso de {len(codigo_limpo) - 64} caracteres).")
 
     with col_btn:
         st.write("")
@@ -296,7 +413,7 @@ if modo_selecionado == "🔍 Validação Pública":
                 st.markdown(
                     f"""
                     <div class='validation-card'>
-                        <h3 style='color: #15803D; margin-top: 0;'>✅ CERTIFICADO AUTÊNTICO E VÁLIDO</h3>
+                        <h3 style='color: #15803D; margin-top: 0;'>CERTIFICADO AUTÊNTICO E VÁLIDO</h3>
                         <p style='color: #1E293B; margin-bottom: 8px;'>
                             O documento consultado possui registro oficial e veracidade atestada perante o 
                             <strong>Livro de Registro Digital</strong> da instituição emissora.
@@ -339,7 +456,7 @@ if modo_selecionado == "🔍 Validação Pública":
                 st.markdown(
                     f"""
                     <div class='validation-card-error'>
-                        <h3 style='color: #B91C1C; margin-top: 0;'>❌ CERTIFICADO NÃO ENCONTRADO OU INVÁLIDO</h3>
+                        <h3 style='color: #B91C1C; margin-top: 0;'>CERTIFICADO NÃO ENCONTRADO OU INVÁLIDO</h3>
                         <p style='color: #1E293B;'>
                             {resultado.mensagem}
                         </p>
@@ -356,7 +473,7 @@ if modo_selecionado == "🔍 Validação Pública":
 # Visão 2: Área do Emissor (Painel Administrativo Protegido)
 # ==============================================================================
 
-elif modo_selecionado == "🔐 Área do Emissor (Admin)":
+elif modo_selecionado == "Área do Emissor (Admin)":
     admin_password = get_admin_password()
 
     # Controle de Autenticação
@@ -393,11 +510,11 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
     st.markdown(f"<div class='sub-header'>{inst_cfg.nome_fantasia.upper()} · {inst_cfg.razao_social} (CNPJ: {inst_cfg.cnpj})</div>", unsafe_allow_html=True)
 
     tab_emissao, tab_diario, tab_livro, tab_auditoria, tab_config = st.tabs([
-        "🎓 Emissão de Certificados",
-        "📋 Diário de Frequência & Turmas",
-        "📖 Livro de Registro Digital",
-        "📊 Auditoria de Validações & Acessos",
-        "⚙️ Configurações da Instituição",
+        "Emissão em Lote",
+        "Diário de Frequência & Turmas",
+        "Livro de Registro Digital",
+        "Auditoria e Acessos",
+        "Configurações da Instituição",
     ])
 
     # --------------------------------------------------------------------------
@@ -560,11 +677,11 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 # Tabela interativa SEMPRE editável para conferência prévia total
                 def _status_aluno(a: ValidacaoAluno) -> str:
                     if a.is_apto_emissao:
-                        return "✅ Apto para Emissão"
+                        return "Apto para Emissão"
                     elif a.tem_erro_frequencia and not a.tem_erro_cadastral:
-                        return f"🟡 Freq. Baixa ({a.frequencia}% < {freq_minima_input}%) - Não certificado"
+                        return f"Freq. Baixa ({a.frequencia}% < {freq_minima_input}%) - Não certificado"
                     else:
-                        return "❌ Erro Cadastral: " + "; ".join(a.erros)
+                        return "Erro Cadastral: " + "; ".join(a.erros)
 
                 df_edit = pd.DataFrame([
                     {
@@ -603,11 +720,11 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 alunos_reprovados_freq = [a for a in alunos_revalidados if a.tem_erro_frequencia and not a.tem_erro_cadastral]
 
                 if len(erros_cadastrais) > 0:
-                    st.error(f"❌ Há {len(erros_cadastrais)} aluno(s) com erro cadastral (ex: nome sem sobrenome ou CPF inválido obrigatório). Corrija na tabela acima para liberar a emissão.")
+                    st.error(f"Há {len(erros_cadastrais)} aluno(s) com erro cadastral (ex: nome sem sobrenome ou CPF inválido obrigatório). Corrija na tabela acima para liberar a emissão.")
                     alunos_para_emissao = []
                     is_lote_valido = False
                 elif len(alunos_aptos) == 0:
-                    st.warning(f"⚠️ Nenhum aluno atingiu a frequência mínima de {freq_minima_input}% para emissão de certificado. Se necessário, você pode retificar a Frequência (%) na tabela acima.")
+                    st.warning(f"Nenhum aluno atingiu a frequência mínima de {freq_minima_input}% para emissão de certificado. Se necessário, você pode retificar a Frequência (%) na tabela acima.")
                     alunos_para_emissao = []
                     is_lote_valido = False
                 else:
@@ -615,16 +732,16 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     alunos_para_emissao = alunos_aptos
                     if len(alunos_reprovados_freq) > 0:
                         st.info(
-                            f"ℹ️ **Emissão Não-Bloqueante**: {len(alunos_aptos)} aluno(s) serão certificados. "
+                            f"**Emissão Não-Bloqueante**: {len(alunos_aptos)} aluno(s) serão certificados. "
                             f"{len(alunos_reprovados_freq)} aluno(s) com frequência abaixo de {freq_minima_input}% "
                             "não receberão certificado nesta emissão, mas constarão arquivados no Diário de Classe."
                         )
                     else:
-                        st.success(f"✅ Todos os {len(alunos_aptos)} alunos estão válidos e aptos para emissão!")
+                        st.success(f"Todos os {len(alunos_aptos)} alunos estão válidos e aptos para emissão!")
 
         st.markdown("---")
         st.subheader("2. Identidade Visual e Assinatura")
-        st.caption("O logotipo e a assinatura padrão oficiais podem ser cadastrados permanentemente na aba **⚙️ Configurações da Instituição**. Você também pode ajustá-los pontualmente para esta turma abaixo:")
+        st.caption("O logotipo e a assinatura padrão oficiais podem ser cadastrados permanentemente na aba **Configurações da Instituição**. Você também pode ajustá-los pontualmente para esta turma abaixo:")
 
         col_cor1, col_cor2 = st.columns(2)
         with col_cor1:
@@ -753,7 +870,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
             st.error("Não é possível emitir certificados sem a instituição estar devidamente configurada:")
             for e in erros_institucionais:
                 st.write(f"- {e}")
-            st.info("Acesse a aba '⚙️ Configurações da Instituição' para preencher seu CNPJ e dados cadastrais.")
+            st.info("Acesse a aba 'Configurações da Instituição' para preencher seu CNPJ e dados cadastrais.")
 
         pode_emitir = is_lote_valido and bool(curso_nome.strip()) and not erros_institucionais
 
@@ -826,10 +943,10 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
 
         if "ultimo_lote_zip" in st.session_state:
             lote_salvo = st.session_state["ultimo_lote_zip"]
-            st.markdown("#### 📦 Arquivo Pronto para Download")
+            st.markdown("#### Arquivo Pronto para Download")
             st.success(f"Pacote de **{lote_salvo['total']} certificado(s)** da turma *{lote_salvo['curso_nome']}* gerado com sucesso!")
             st.download_button(
-                label=f"⬇️ Baixar Pacote Completo ({lote_salvo['filename']})",
+                label=f"Baixar Pacote Completo ({lote_salvo['filename']})",
                 data=lote_salvo["bytes"],
                 file_name=lote_salvo["filename"],
                 mime="application/zip",
@@ -893,7 +1010,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                             for enc in encontros_info:
                                 col_lbl = enc.get("data_str") or enc.get("nome_coluna")
                                 col_k = enc.get("nome_coluna")
-                                linha[col_lbl] = "✔️" if p_map.get(col_k, False) else "❌"
+                                linha[col_lbl] = "Presente" if p_map.get(col_k, False) else "—"
                         tabela_dados.append(linha)
 
                     df_diario = pd.DataFrame(tabela_dados)
@@ -910,7 +1027,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     )
                     excel_buf.seek(0)
                     st.download_button(
-                        label="📄 Baixar Diário de Classe Oficial (.xlsx)",
+                        label="Baixar Diário de Classe Oficial (.xlsx)",
                         data=excel_buf.getvalue(),
                         file_name=f"diario_classe_turma_{turma_selecionada_id}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -918,7 +1035,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                     )
 
                     st.markdown("---")
-                    st.markdown("##### ⚖️ Retificação de Falta por Motivo Legal / Administrativo")
+                    st.markdown("##### Retificação de Falta por Motivo Legal / Administrativo")
                     st.caption("Permite retificar a frequência de um aluno mediante justificativa comprobatória (ex: atestado médico), mantendo histórico de auditoria.")
 
                     aluno_retificar = st.selectbox(
@@ -1142,8 +1259,8 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
         st.markdown("---")
 
         subtab_consultas, subtab_wakeups = st.tabs([
-            "🔍 Histórico de Validações Públicas",
-            "⚡ Eventos de Wakeup & Inicialização",
+            "Histórico de Validações Públicas",
+            "Eventos de Wakeup & Inicialização",
         ])
 
         with subtab_consultas:
@@ -1161,7 +1278,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                             excel_auditoria_bytes = f.read()
 
                     st.download_button(
-                        label="📥 Exportar Histórico para Excel (.xlsx)",
+                        label="Exportar Histórico para Excel (.xlsx)",
                         data=excel_auditoria_bytes,
                         file_name=f"auditoria_validacoes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1191,7 +1308,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 )
 
             st.caption(
-                "💡 **Dica de Infraestrutura**: O servidor do Streamlit Community Cloud hiberna após inatividade. "
+                "**Dica de Infraestrutura**: O servidor do Streamlit Community Cloud hiberna após inatividade. "
                 "O workflow de Keep-Alive no GitHub Actions executa pings a cada 6 horas para manter a prontidão do validador."
             )
 
@@ -1270,7 +1387,7 @@ elif modo_selecionado == "🔐 Área do Emissor (Admin)":
                 conf_reg = st.number_input("Registro Inicial:", min_value=1, value=inst_cfg.initial_registro, disabled=travado)
 
             if travado:
-                st.caption("🔒 A numeração inicial está travada porque já existem certificados emitidos. Para alterar, use a aba 'Livro de Registro' -> 'Zona de Testes'.")
+                st.caption("A numeração inicial está travada porque já existem certificados emitidos. Para alterar, use a aba 'Livro de Registro' -> 'Ambiente de Homologação / Testes'.")
             else:
                 st.caption("Defina por qual livro, folha e número de registro o primeiro lote emitido começará (ex: Livro 1, Folha 14, Registro 14).")
 

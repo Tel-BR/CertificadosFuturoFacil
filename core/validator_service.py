@@ -18,7 +18,7 @@ from core.registry import CertificadoRegistro, LivroRegistroManager
 from core.validator import clean_cpf, mask_cpf, normalize_name
 
 DEFAULT_VALIDATION_BASE_URL: str = (
-    "https://certificados-futurofacil.streamlit.app/?validar="
+    "https://futurofacil.com.br/certificados?validar="
 )
 
 
