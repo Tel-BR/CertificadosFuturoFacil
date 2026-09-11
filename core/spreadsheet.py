@@ -7,9 +7,28 @@ from typing import Any, Dict, List, Optional, Union
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles.stylesheet import CellStyle
 import pandas as pd
 
 from core.validator import ValidacaoAluno, validar_aluno
+
+# Garante conformidade com o padrão ECMA-376 / Microsoft Excel para colunas de Texto (@)
+if "applyNumberFormat" not in CellStyle.__attrs__:
+    CellStyle.__attrs__ = CellStyle.__attrs__ + ("applyNumberFormat",)
+
+_orig_cell_style_from_array = CellStyle.from_array
+
+
+def _patched_cell_style_from_array(style):
+    xf = _orig_cell_style_from_array(style)
+    if getattr(style, "numFmtId", None):
+        xf.applyNumberFormat = 1
+        if style.numFmtId == 49:
+            xf.quotePrefix = 1
+    return xf
+
+
+CellStyle.from_array = _patched_cell_style_from_array
 
 
 MESES_PT = {
@@ -141,6 +160,7 @@ def generate_template_spreadsheet(
     ws.column_dimensions["B"].width = 22
     ws.column_dimensions["C"].width = 22
     ws.column_dimensions["B"].number_format = '@'
+    ws.cell(row=1, column=2).number_format = '@'
 
     for col_idx in range(4, len(headers) + 1):
         from openpyxl.utils import get_column_letter
