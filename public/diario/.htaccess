@@ -23,6 +23,9 @@ AddDefaultCharset UTF-8
     # Rota de Logout
     RewriteRule ^logout/?$ logout.php [L,QSA]
 
+    # Rota do Calendário
+    RewriteRule ^calendario/?$ calendario.php [L,QSA]
+
     # Se a requisição não for arquivo ou diretório físico existente, envia para index.php
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
