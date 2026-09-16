@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS `encontros` (
     `horario_fim` TIME NULL,
     `conteudo_previsto` TEXT NULL,
     `conteudo_ministrado` TEXT NULL,
+    `tipo` ENUM('aula', 'deslocamento') NOT NULL DEFAULT 'aula' COMMENT 'aula = Encontro pedagógico regular, deslocamento = Bloqueio de viagem logística',
     `abonado` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = Aula abonada coletivamente para todos os alunos',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
