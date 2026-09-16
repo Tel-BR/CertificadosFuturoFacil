@@ -683,32 +683,49 @@ elif modo_selecionado == "Área do Emissor (Admin)":
                     else:
                         return "Erro Cadastral: " + "; ".join(a.erros)
 
-                df_edit = pd.DataFrame([
-                    {
-                        "Linha": idx,
-                        "Nome": a.nome,
-                        "CPF": a.cpf if a.cpf else "",
-                        "Frequência (%)": a.frequencia,
-                        "Status": _status_aluno(a),
-                    }
-                    for idx, a in enumerate(res_auditoria.alunos, start=2)
-                ])
+                # Inicialização e persistência das edições no st.session_state
+                upload_file_sig = f"{uploaded_file.name}_{len(bytes_data)}_{freq_minima_input}_{cpf_obrigatorio}"
+                if (
+                    "editor_upload_sig" not in st.session_state
+                    or st.session_state["editor_upload_sig"] != upload_file_sig
+                    or "df_editor_state" not in st.session_state
+                ):
+                    st.session_state["editor_upload_sig"] = upload_file_sig
+                    df_inicial = pd.DataFrame([
+                        {
+                            "Linha": idx,
+                            "Nome": a.nome.strip(),
+                            "CPF": a.cpf if a.cpf else "",
+                            "Frequência (%)": int(a.frequencia),
+                            "Status": _status_aluno(a),
+                        }
+                        for idx, a in enumerate(res_auditoria.alunos, start=2)
+                    ])
+                    st.session_state["df_editor_state"] = df_inicial
 
                 edited_df = st.data_editor(
-                    df_edit,
+                    st.session_state["df_editor_state"],
                     disabled=["Linha", "Status"],
                     use_container_width=True,
                     key="editor_alunos",
                 )
+                # Mantém o session_state sempre atualizado com as últimas edições do usuário
+                st.session_state["df_editor_state"] = edited_df
 
-                # Revalida os dados editados em tempo real
+                # Revalida os dados editados em tempo real garantindo soberania da edição manual
                 alunos_revalidados: List[ValidacaoAluno] = []
                 for (idx_aluno, orig_aluno), (_, row) in zip(enumerate(res_auditoria.alunos), edited_df.iterrows()):
+                    raw_freq_edit = row["Frequência (%)"]
+                    try:
+                        freq_edit_num = int(round(float(raw_freq_edit)))
+                    except (ValueError, TypeError):
+                        freq_edit_num = orig_aluno.frequencia
+
                     val = validar_aluno(
                         str(row["Nome"]).strip(),
                         str(row["CPF"]).strip() if pd.notna(row["CPF"]) else None,
                         cpf_obrigatorio=cpf_obrigatorio,
-                        frequencia=row["Frequência (%)"],
+                        frequencia=freq_edit_num,
                         frequencia_minima=int(freq_minima_input),
                         detalhes_presenca=orig_aluno.detalhes_presenca,
                         permitir_cpf_invalido_como_sem_cpf=not cpf_obrigatorio,
