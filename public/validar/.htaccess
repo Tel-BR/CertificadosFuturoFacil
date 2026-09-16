@@ -1,0 +1,13 @@
+# Proteção e Configuração da Rota Pública de Validação
+Options -Indexes
+AddDefaultCharset UTF-8
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /validar/
+
+    # Se a requisição não for arquivo ou diretório físico, encaminha para index.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^([a-fA-F0-9]{64})/?$ index.php?validar=$1 [L,QSA]
+</IfModule>

@@ -80,6 +80,33 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ==============================================================================
+# Ponte de Redirecionamento Canônico do Validador (Hostinger - ADR-0004 / ADR-0007)
+# Redireciona imediatamente requisições antigas de QR Code para a nova rota canônica
+# ==============================================================================
+try:
+    _params = st.query_params
+    _codigo_validacao = _params.get("validar") or _params.get("codigo")
+except AttributeError:
+    _params = st.experimental_get_query_params()
+    _codigo_validacao = _params.get("validar", [None])[0] or _params.get("codigo", [None])[0]
+
+if _codigo_validacao:
+    _target_url = f"https://futurofacil.com.br/validar?validar={_codigo_validacao}"
+    st.markdown(
+        f"""
+        <meta http-equiv="refresh" content="0; url={_target_url}">
+        <script>window.location.replace("{_target_url}");</script>
+        <div style="padding: 2.5rem; text-align: center; font-family: sans-serif;">
+            <h2 style="color: #0E7490;">Redirecionando para a Rota Canônica Oficial...</h2>
+            <p style="color: #64748B;">Aguarde alguns instantes ou <a href="{_target_url}" style="color: #0E7490; font-weight: bold;">clique aqui para acessar o novo validador</a>.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
+
 # Estilização CSS institucional oficial (Futuro Fácil)
 st.markdown(
     """
