@@ -131,3 +131,17 @@ CREATE TABLE IF NOT EXISTS usuarios_admin (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS tentativas_login (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip_address TEXT NOT NULL,
+    username TEXT NOT NULL,
+    tentativas INTEGER NOT NULL DEFAULT 1,
+    bloqueado_ate TEXT NULL,
+    ultimo_erro TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tentativas_ip_user ON tentativas_login(ip_address, username);
+

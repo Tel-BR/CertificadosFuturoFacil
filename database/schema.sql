@@ -172,4 +172,20 @@ CREATE TABLE IF NOT EXISTS `usuarios_admin` (
     INDEX `idx_admin_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- -----------------------------------------------------------------------------
+-- 8. Tabela: tentativas_login
+-- Controle de rate-limiting e mitigação de ataques de força bruta
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `tentativas_login` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `ip_address` VARCHAR(45) NOT NULL,
+    `username` VARCHAR(100) NOT NULL,
+    `tentativas` INT UNSIGNED NOT NULL DEFAULT 1,
+    `bloqueado_ate` TIMESTAMP NULL DEFAULT NULL,
+    `ultimo_erro` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_tentativas_ip_user` (`ip_address`, `username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

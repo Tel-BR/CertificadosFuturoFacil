@@ -1,0 +1,7 @@
+# Diretivas de indexação para motores de busca (Futuro Fácil)
+User-agent: *
+Disallow: /diario/
+Disallow: /turmas/arquivos/
+
+# Permitir validação pública
+Allow: /validar

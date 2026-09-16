@@ -4,13 +4,17 @@
  */
 declare(strict_types=1);
 
-$_GET['validar'] = '6FB1ED64F19C8BBC4DA014D0AEAB6E78CC8D72A661523C23F01751D22CA998FD';
-
 require_once __DIR__ . '/../src/Config/Database.php';
 \FuturoFacil\Config\Database::setConfig([
     'driver' => 'sqlite',
     'database' => __DIR__ . '/../registros.db',
 ]);
+
+// Consulta hash real de Ana Luiza para conferir os dados esperados
+$dbCheck = \FuturoFacil\Config\Database::getConnection();
+$realHash = $dbCheck->query("SELECT codigo_autenticidade FROM registros_certificados WHERE aluno_nome LIKE '%Ana Luiza%' LIMIT 1")->fetchColumn();
+$_GET['validar'] = $realHash ?: '3A83BC60D234691233DE0DE8C194C72036AAF09CA27DD135AA47864D68229541';
+
 
 ob_start();
 require __DIR__ . '/../public/validar/index.php';

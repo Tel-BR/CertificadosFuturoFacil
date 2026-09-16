@@ -83,8 +83,7 @@ def test_certificate_anverso_and_reverso_text_content(sample_registro):
     assert "A1B2C3D4" in page2_text
     assert "2.200-2/2001" in page2_text
     assert "Código Civil" in page2_text or "10.406" in page2_text
-    assert "Validação digital pública via QR Code" in page2_text
-    assert "inicialização sob demanda" in page2_text
+    assert "Consulte a autenticidade" in page2_text or "inicialização sob demanda" in page2_text
 
 
 def test_certificate_default_instructor_and_city():

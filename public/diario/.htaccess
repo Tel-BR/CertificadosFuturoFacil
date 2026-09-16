@@ -1,0 +1,30 @@
+# =============================================================================
+# Proteção de Diretório e Roteamento Administrativo (/diario)
+# =============================================================================
+
+# Bloqueio de listagem de diretório
+Options -Indexes
+
+AddDefaultCharset UTF-8
+
+# Proteção contra indexação por motores de busca via HTTP Header
+<IfModule mod_headers.c>
+    Header set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+</IfModule>
+
+# Regras de Roteamento Amigável
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /diario/
+
+    # Rota de Login
+    RewriteRule ^login/?$ login.php [L,QSA]
+
+    # Rota de Logout
+    RewriteRule ^logout/?$ logout.php [L,QSA]
+
+    # Se a requisição não for arquivo ou diretório físico existente, envia para index.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [L,QSA]
+</IfModule>
