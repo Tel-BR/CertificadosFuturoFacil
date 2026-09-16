@@ -179,7 +179,7 @@ class CertificateRenderConfig:
     secondary_color: str = "#EA580C"  # Coral Solar
     logo_path: Optional[Union[str, Path]] = None
     signature_image_path: Optional[Union[str, Path]] = "assets/assinatura.png"
-    validation_base_url: str = "https://certificados-futurofacil.streamlit.app/?validar="
+    validation_base_url: str = "https://futurofacil.com.br/validar?codigo="
     institution_name: str = "FUTUROFÁCIL"
     institution_tagline: str = "CAPACITAÇÃO DIGITAL SOB MEDIDA"
     instructor_title: str = "Instrutor(a) Responsável · Capacitação Digital"
@@ -792,7 +792,7 @@ def render_reverso(
     c.drawCentredString(
         col_right_x + col_right_w / 2.0,
         qr_y - 22,
-        "Servidor em nuvem com inicialização sob demanda (~30s)",
+        "Consulte a autenticidade no portal institucional",
     )
 
     # Caixa do Código de Autenticidade (SHA-256)

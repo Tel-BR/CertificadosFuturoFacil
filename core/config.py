@@ -29,7 +29,7 @@ class InstituicaoConfig:
     initial_livro: int = 1
     initial_folha: int = 1
     initial_registro: int = 1
-    validation_base_url: str = "https://certificados-futurofacil.streamlit.app/?validar="
+    validation_base_url: str = "https://futurofacil.com.br/validar?codigo="
     logo_path: Optional[str] = None
     signature_path: Optional[str] = "assets/assinatura.png"
 

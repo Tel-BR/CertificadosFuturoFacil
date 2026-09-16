@@ -38,7 +38,11 @@ def test_build_validation_url():
     url4 = build_validation_url("https://meusite.com/portal?app=certificados", code)
     assert url4 == f"https://meusite.com/portal?app=certificados&validar={code}"
 
-    # Caso padrão padrão da aplicação
+    # Caso padrão com rota canônica e ?codigo=
+    url5 = build_validation_url("https://futurofacil.com.br/validar?codigo=", code)
+    assert url5 == f"https://futurofacil.com.br/validar?codigo={code}"
+
+    # Caso padrão da aplicação
     url_default = build_validation_url(DEFAULT_VALIDATION_BASE_URL, code)
     assert url_default == f"{DEFAULT_VALIDATION_BASE_URL}{code}"
 

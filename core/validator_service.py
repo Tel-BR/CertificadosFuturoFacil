@@ -18,14 +18,14 @@ from core.registry import CertificadoRegistro, LivroRegistroManager
 from core.validator import clean_cpf, mask_cpf, normalize_name
 
 DEFAULT_VALIDATION_BASE_URL: str = (
-    "https://futurofacil.com.br/certificados?validar="
+    "https://futurofacil.com.br/validar?codigo="
 )
 
 
 def clean_auth_code(codigo: Optional[str]) -> str:
     """
     Higieniza o código de autenticidade (SHA-256):
-    Remove todos os espaços em branco, tabulações e quebras de linha (\\n, \\r)
+    Remove todos os espaços em branco, tabulações e quebras de linha (\n, \r)
     decorrentes de cópia do PDF ou digitação, retornando string em caixa alta.
     """
     if not codigo:
@@ -36,15 +36,19 @@ def clean_auth_code(codigo: Optional[str]) -> str:
 def build_validation_url(base_url: str, code: str) -> str:
     """
     Constrói a URL pública de validação evitando barras extras ou parâmetros duplicados.
-    Suporta URLs com e sem '?validar=' ou parâmetros existentes de query string.
+    Suporta URLs com e sem '?validar=', '?codigo=' ou parâmetros existentes de query string.
     """
     clean_base = str(base_url or "").strip()
     clean_code = clean_auth_code(code)
 
-    if "validar=" in clean_base:
+    if clean_base.endswith("="):
+        return f"{clean_base}{clean_code}"
+
+    if "validar=" in clean_base or "codigo=" in clean_base:
         if clean_base.endswith("=") or clean_base.endswith("&"):
             return f"{clean_base}{clean_code}"
-        return f"{clean_base}&validar={clean_code}"
+        param = "codigo" if "codigo=" in clean_base else "validar"
+        return f"{clean_base}&{param}={clean_code}"
 
     if "?" in clean_base:
         sep = "&" if not clean_base.endswith(("?", "&")) else ""

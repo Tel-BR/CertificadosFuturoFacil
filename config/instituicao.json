@@ -11,7 +11,7 @@
   "initial_livro": 1,
   "initial_folha": 1,
   "initial_registro": 1,
-  "validation_base_url": "https://certificados-futurofacil.streamlit.app/?validar=",
+  "validation_base_url": "https://futurofacil.com.br/validar?codigo=",
   "logo_path": null,
   "signature_path": "assets/assinatura.png"
 }
