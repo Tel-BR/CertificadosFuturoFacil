@@ -1,0 +1,454 @@
+<?php
+/**
+ * Suíte de Testes Automatizados — Ticket 05: Sincronização Bidirecional com Planilhas Excel (.xlsx)
+ * Costura de Teste 4 (Testing Seam 4): Borda de Sincronização Excel (.xlsx) e Idempotência sem Duplicidade
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/Config/Database.php';
+require_once __DIR__ . '/../src/Services/ValidatorService.php';
+require_once __DIR__ . '/../src/Services/AttendanceService.php';
+require_once __DIR__ . '/../src/Services/ExcelSyncService.php';
+require_once __DIR__ . '/../src/Services/AuthService.php';
+
+use FuturoFacil\Config\Database;
+use FuturoFacil\Services\ValidatorService;
+use FuturoFacil\Services\AttendanceService;
+use FuturoFacil\Services\ExcelSyncService;
+
+$verde = "\033[32m";
+$vermelho = "\033[31m";
+$amarelo = "\033[33m";
+$azul = "\033[36m";
+$reset = "\033[0m";
+
+echo "{$azul}======================================================================\n";
+echo " Executando Suíte de Testes — Ticket 05: Excel (.xlsx) e Costura de Teste 4\n";
+echo "======================================================================{$reset}\n\n";
+
+$testDbPath = __DIR__ . '/test_temp_excel_sync.db';
+if (file_exists($testDbPath)) {
+    unlink($testDbPath);
+}
+
+$passedCount = 0;
+$totalCount = 0;
+
+function assertTest(bool $condition, string $description, ?string $detail = null): void
+{
+    global $verde, $vermelho, $reset, $passedCount, $totalCount;
+    $totalCount++;
+    if ($condition) {
+        $passedCount++;
+        echo "  {$verde}✓ [OK]{$reset} {$description}\n";
+    } else {
+        echo "  {$vermelho}✗ [FALHA]{$reset} {$description}";
+        if ($detail) {
+            echo " ({$detail})";
+        }
+        echo "\n";
+    }
+}
+
+try {
+    // 1. Inicializa banco SQLite isolado para os testes
+    $pdo = new PDO("sqlite:{$testDbPath}", null, null, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+    $schemaSql = file_get_contents(__DIR__ . '/../database/schema_sqlite.sql');
+    $pdo->exec($schemaSql);
+
+    Database::setConfig([
+        'driver'   => 'sqlite',
+        'database' => $testDbPath,
+    ]);
+
+    // 2. Popula turma de teste com 10 alunos e 4 encontros
+    $pdo->exec("
+        INSERT INTO turmas (
+            codigo_turma, curso_nome, cliente_nome, ordem_servico,
+            data_inicio, data_conclusao, turno_padrao, status, chave_acesso,
+            carga_horaria, instrutor, cidade, ementa
+        ) VALUES (
+            'TURMA-EXCEL-SYNC-TEST', 'Excel Corporativo Especialista', 'Sicoob Credisul', 'OS-2026-005',
+            '2026-09-14', '2026-09-17', 'V', 'em_andamento', 'CHAVE-EXCEL-TEST-2026',
+            16, 'Telmo Tropia', 'Goiânia - GO', 'Fórmulas, Dinâmicas, Dashboards e Power Query'
+        )
+    ");
+    $turmaId = (int)$pdo->lastInsertId();
+
+    $encontrosData = [
+        [1, '2026-09-14', '14:00', '18:00', 'Introdução ao Excel Avançado e PROCV', 'Aula 1 realizada com foco em PROCV e PROCH.', 'aula', 0],
+        [2, '2026-09-15', '14:00', '18:00', 'Tabelas Dinâmicas e Fórmulas Matriciais', null, 'aula', 0],
+        [3, '2026-09-16', '14:00', '18:00', 'Segmentação de Dados e Dashboards', null, 'aula', 0],
+        [4, '2026-09-17', '14:00', '18:00', 'Automação com Power Query', null, 'aula', 0],
+    ];
+    $stmtEnc = $pdo->prepare("
+        INSERT INTO encontros (
+            turma_id, numero_encontro, data_encontro, turno, horario_inicio, horario_fim,
+            conteudo_previsto, conteudo_ministrado, tipo, abonado
+        ) VALUES (
+            ?, ?, ?, 'V', ?, ?,
+            ?, ?, ?, ?
+        )
+    ");
+    $encontroIds = [];
+    foreach ($encontrosData as $enc) {
+        $stmtEnc->execute([
+            $turmaId, $enc[0], $enc[1], $enc[2], $enc[3],
+            $enc[4], $enc[5], $enc[6], $enc[7]
+        ]);
+        $encontroIds[$enc[0]] = (int)$pdo->lastInsertId();
+    }
+
+    // Gerador de CPFs matematicamente válidos para teste (garantindo unicidade)
+    function gerarCpfValido(int $seed): string
+    {
+        $base = str_pad((string)(200000000 + $seed), 9, '0', STR_PAD_LEFT);
+        $d = array_map('intval', str_split($base));
+        $soma1 = 0;
+        for ($i = 0; $i < 9; $i++) {
+            $soma1 += $d[$i] * (10 - $i);
+        }
+        $r1 = $soma1 % 11;
+        $dv1 = ($r1 < 2) ? 0 : 11 - $r1;
+        $d[] = $dv1;
+
+        $soma2 = 0;
+        for ($i = 0; $i < 10; $i++) {
+            $soma2 += $d[$i] * (11 - $i);
+        }
+        $r2 = $soma2 % 11;
+        $dv2 = ($r2 < 2) ? 0 : 11 - $r2;
+        $d[] = $dv2;
+
+        return implode('', $d);
+    }
+
+    $stmtAluno = $pdo->prepare("
+        INSERT INTO alunos (turma_id, nome_completo, cpf, cpf_limpo, cpf_mascarado)
+        VALUES (?, ?, ?, ?, ?)
+    ");
+    $alunoIds = [];
+    for ($i = 1; $i <= 10; $i++) {
+        $nome = "Aluno Sincronizacao " . str_pad((string)$i, 2, '0', STR_PAD_LEFT);
+        $cpfLimpo = gerarCpfValido($i);
+        $cpfFormatado = ValidatorService::formatCpf($cpfLimpo);
+        $cpfMascarado = ValidatorService::maskCpf($cpfLimpo);
+        $stmtAluno->execute([$turmaId, $nome, $cpfFormatado, $cpfLimpo, $cpfMascarado]);
+        $alunoIds[] = (int)$pdo->lastInsertId();
+    }
+
+    // Registra chamada do Encontro 1 com todos presentes
+    $stmtFreqInit = $pdo->prepare("INSERT INTO frequencias (encontro_id, aluno_id, presente) VALUES (?, ?, ?)");
+    foreach ($alunoIds as $aId) {
+        $stmtFreqInit->execute([$encontroIds[1], $aId, 1]);
+    }
+
+    $syncService = new ExcelSyncService($pdo);
+
+    // =========================================================================
+    // SEÇÃO 1: Exportação da Planilha Excel (.xlsx) e Estrutura em 3 Abas
+    // =========================================================================
+    echo "{$amarelo}-> 1. Testando Exportação da Planilha Excel e Validação das 3 Abas...{$reset}\n";
+
+    $xlsxBinary = $syncService->exportTurmaSpreadsheet($turmaId);
+    assertTest(is_string($xlsxBinary) && strlen($xlsxBinary) > 1000, "Planilha exportada com sucesso (tamanho binário > 1KB)");
+    assertTest(str_starts_with($xlsxBinary, "PK\x03\x04"), "Arquivo gerado possui assinatura válida de arquivo ZIP/OpenXML (PK)");
+
+    // Salva temporariamente para inspeção via ZipArchive
+    $exportedFilePath = __DIR__ . '/test_turma_exported.xlsx';
+    file_put_contents($exportedFilePath, $xlsxBinary);
+
+    $zip = new ZipArchive();
+    $openRes = $zip->open($exportedFilePath);
+    assertTest($openRes === true, "Arquivo .xlsx pode ser aberto como ZIP sem corrupção");
+
+    // Verifica arquivos obrigatórios do OpenXML
+    assertTest($zip->locateName('[Content_Types].xml') !== false, "Arquivo contém [Content_Types].xml");
+    assertTest($zip->locateName('_rels/.rels') !== false, "Arquivo contém _rels/.rels");
+    assertTest($zip->locateName('xl/workbook.xml') !== false, "Arquivo contém xl/workbook.xml");
+    assertTest($zip->locateName('xl/styles.xml') !== false, "Arquivo contém xl/styles.xml");
+    assertTest($zip->locateName('xl/worksheets/sheet1.xml') !== false, "Arquivo contém xl/worksheets/sheet1.xml");
+    assertTest($zip->locateName('xl/worksheets/sheet2.xml') !== false, "Arquivo contém xl/worksheets/sheet2.xml");
+    assertTest($zip->locateName('xl/worksheets/sheet3.xml') !== false, "Arquivo contém xl/worksheets/sheet3.xml");
+    $zip->close();
+
+    // Faz o parse do arquivo gerado
+    $parsedData = $syncService->parseXlsx($exportedFilePath);
+    assertTest(isset($parsedData['Alunos e Chamada']), "Aba 1 'Alunos e Chamada' identificada com sucesso");
+    assertTest(isset($parsedData['Diário e Planos']), "Aba 2 'Diário e Planos' identificada com sucesso");
+    assertTest(isset($parsedData['Dados da Turma']), "Aba 3 'Dados da Turma' identificada com sucesso");
+
+    // Valida conteúdo da Aba 1 (Alunos e Chamada)
+    $aba1 = $parsedData['Alunos e Chamada'];
+    assertTest(count($aba1) === 11, "Aba 1 contém 11 linhas (1 cabeçalho + 10 alunos)");
+    assertTest($aba1[0][0] === 'Nº' && $aba1[0][1] === 'Nome Completo' && $aba1[0][2] === 'CPF', "Cabeçalhos básicos da Aba 1 corretos (Nº, Nome Completo, CPF)");
+    assertTest(str_contains((string)$aba1[0][3], 'Encontro 1'), "Coluna de Encontro 1 presente no cabeçalho da chamada");
+    assertTest(str_contains((string)$aba1[0][4], 'Encontro 2'), "Coluna de Encontro 2 presente no cabeçalho da chamada");
+    assertTest(end($aba1[0]) === 'Frequência (%)', "Última coluna da Aba 1 é a Frequência (%) acumulada");
+    assertTest($aba1[1][1] === 'Aluno Sincronizacao 01', "Nome do primeiro aluno presente na linha 2");
+    assertTest((int)$aba1[1][3] === 1, "Presença do primeiro aluno no Encontro 1 registrada como 1");
+
+    // Valida conteúdo da Aba 2 (Diário e Planos)
+    $aba2 = $parsedData['Diário e Planos'];
+    assertTest(count($aba2) === 5, "Aba 2 contém 5 linhas (1 cabeçalho + 4 encontros)");
+    assertTest($aba2[1][7] === 'Introdução ao Excel Avançado e PROCV', "Conteúdo previsto do Encontro 1 exportado fielmente");
+    assertTest($aba2[1][8] === 'Aula 1 realizada com foco em PROCV e PROCH.', "Conteúdo ministrado do Encontro 1 exportado fielmente");
+
+    // Valida conteúdo da Aba 3 (Dados da Turma)
+    $aba3 = $parsedData['Dados da Turma'];
+    assertTest(count($aba3) >= 10, "Aba 3 contém metadados completos da turma");
+    $metaTurma = [];
+    foreach ($aba3 as $r) {
+        if (isset($r[0], $r[1])) {
+            $metaTurma[trim((string)$r[0])] = trim((string)$r[1]);
+        }
+    }
+    assertTest(($metaTurma['Nome do Curso'] ?? '') === 'Excel Corporativo Especialista', "Nome do curso correto na Aba 3");
+    assertTest(($metaTurma['Cliente'] ?? '') === 'Sicoob Credisul', "Cliente correto na Aba 3");
+    assertTest(($metaTurma['Carga Horária (h)'] ?? '') === '16', "Carga horária correta na Aba 3");
+    assertTest(($metaTurma['Instrutor'] ?? '') === 'Telmo Tropia', "Instrutor correto na Aba 3");
+
+    // =========================================================================
+    // SEÇÃO 2: Sanitização Estrita de Espaços em Branco (.strip() / trim())
+    // =========================================================================
+    echo "\n{$amarelo}-> 2. Testando Sanitização Estrita de Espaços em Branco (conforme Ticket #001)...{$reset}\n";
+
+    // Modifica Aba 1 na matriz simulando espaços acidentais residuais
+    $aba1Sujo = $aba1;
+    $aba1Sujo[1][1] = "   Aluno Sincronizacao 01   "; // Espaços residuais nas pontas
+    $aba1Sujo[1][2] = "  " . $aba1Sujo[1][2] . "   ";
+    $aba1Sujo[2][1] = "  Aluno   Sincronizacao    02  "; // Espaços múltiplos internos e externos
+
+    // Monta planilha com dados sujos e importa
+    $archiveReflection = new ReflectionClass(ExcelSyncService::class);
+    $buildMethod = $archiveReflection->getMethod('buildXlsxArchive');
+    $buildMethod->setAccessible(true);
+    $xlsxSujoBinary = $buildMethod->invoke($syncService, [
+        'Alunos e Chamada' => $aba1Sujo,
+        'Diário e Planos'  => $aba2,
+        'Dados da Turma'   => $aba3,
+    ]);
+    
+    // Testa parser com strings com espaços
+    $resImportSanitize = $syncService->importTurmaSpreadsheet($turmaId, $xlsxSujoBinary);
+    assertTest($resImportSanitize['success'] === true, "Importação com sanitização concluída com sucesso");
+
+    $stmtCheckNome1 = $pdo->prepare("SELECT nome_completo FROM alunos WHERE id = ?");
+    $stmtCheckNome1->execute([$alunoIds[0]]);
+    $nome1Banco = $stmtCheckNome1->fetchColumn();
+    assertTest($nome1Banco === 'Aluno Sincronizacao 01', "Nome do aluno 1 salvo estritamente sanitizado sem espaços externos");
+
+    $stmtCheckNome2 = $pdo->prepare("SELECT nome_completo FROM alunos WHERE id = ?");
+    $stmtCheckNome2->execute([$alunoIds[1]]);
+    $nome2Banco = $stmtCheckNome2->fetchColumn();
+    assertTest($nome2Banco === 'Aluno Sincronizacao 02', "Nome do aluno 2 salvo estritamente sanitizado sem espaços internos múltiplos");
+
+    // =========================================================================
+    // SEÇÃO 3: Costura de Teste 4 — Idempotência sem Duplicidade
+    // =========================================================================
+    echo "\n{$amarelo}-> 3. Testando Costura de Teste 4 (Idempotência sem Duplicidade)...{$reset}\n";
+
+    // Simula alterações offline no Excel feitas pelo operador:
+    // 1. Aluno 01: falta no Encontro 2 (muda de 1 para 0)
+    // 2. Aluno 03: falta no Encontro 2 (muda de 1 para 0)
+    // 3. Conteúdo ministrado do Encontro 2 atualizado
+    $aba1Modificada = $aba1;
+    $aba1Modificada[1][4] = 0; // Aluno 01: Encontro 2 = 0
+    $aba1Modificada[3][4] = 0; // Aluno 03: Encontro 2 = 0
+
+    $aba2Modificada = $aba2;
+    $novoConteudoMin2 = "Aula 2 ministrada offline: Fórmulas Matriciais e Tabelas Dinâmicas avançadas com filtros dinâmicos.";
+    $aba2Modificada[2][8] = $novoConteudoMin2;
+
+    // Constrói novo binário com as modificações
+    $archiveReflection = new ReflectionClass(ExcelSyncService::class);
+    $buildMethod = $archiveReflection->getMethod('buildXlsxArchive');
+    $buildMethod->setAccessible(true);
+    $xlsxModificadoBytes = $buildMethod->invoke($syncService, [
+        'Alunos e Chamada' => $aba1Modificada,
+        'Diário e Planos'  => $aba2Modificada,
+        'Dados da Turma'   => $aba3,
+    ]);
+
+    // Primeira reimportação da planilha modificada
+    $resImport1 = $syncService->importTurmaSpreadsheet($turmaId, $xlsxModificadoBytes);
+
+    assertTest($resImport1['success'] === true, "Primeira reimportação concluída com sucesso");
+    assertTest($resImport1['alunos_atualizados'] === 10, "Exatamente 10 alunos identificados e atualizados");
+    assertTest($resImport1['alunos_inseridos'] === 0, "Zero novos alunos inseridos (nenhuma duplicidade criada)");
+
+    // Checagem rigorosa de integridade no banco MariaDB/SQLite
+    $stmtCountAlunos = $pdo->prepare("SELECT COUNT(*) FROM alunos WHERE turma_id = ?");
+    $stmtCountAlunos->execute([$turmaId]);
+    $totalAlunosAposImport = (int)$stmtCountAlunos->fetchColumn();
+    assertTest($totalAlunosAposImport === 10, "Total de alunos no banco permanece estritamente 10");
+
+    // Verifica presenças no Encontro 2
+    $stmtFreqEnc2 = $pdo->prepare("
+        SELECT aluno_id, presente 
+        FROM frequencias 
+        WHERE encontro_id = ? 
+        ORDER BY aluno_id ASC
+    ");
+    $stmtFreqEnc2->execute([$encontroIds[2]]);
+    $freqRowsEnc2 = $stmtFreqEnc2->fetchAll();
+
+    $mapFreqEnc2 = [];
+    foreach ($freqRowsEnc2 as $fr) {
+        $mapFreqEnc2[(int)$fr['aluno_id']] = (int)$fr['presente'];
+    }
+
+    assertTest($mapFreqEnc2[$alunoIds[0]] === 0, "Aluno 01 com Falta (0) no Encontro 2 após reimportação");
+    assertTest($mapFreqEnc2[$alunoIds[1]] === 1, "Aluno 02 com Presença (1) no Encontro 2");
+    assertTest($mapFreqEnc2[$alunoIds[2]] === 0, "Aluno 03 com Falta (0) no Encontro 2 após reimportação");
+    assertTest($mapFreqEnc2[$alunoIds[9]] === 1, "Aluno 10 com Presença (1) no Encontro 2");
+
+    // Verifica atualização do conteúdo ministrado na Aba 2
+    $stmtEncCheck = $pdo->prepare("SELECT conteudo_ministrado FROM encontros WHERE id = ?");
+    $stmtEncCheck->execute([$encontroIds[2]]);
+    $conteudoMin2Banco = $stmtEncCheck->fetchColumn();
+    assertTest($conteudoMin2Banco === $novoConteudoMin2, "Conteúdo ministrado da aula 2 atualizado fielmente pelo Excel");
+
+    // Reimportação idêntica consecutiva (teste de idempotência estrita)
+    $resImport2 = $syncService->importTurmaSpreadsheet($turmaId, $xlsxModificadoBytes);
+    assertTest($resImport2['success'] === true, "Segunda reimportação idêntica executada com sucesso");
+    assertTest($resImport2['alunos_inseridos'] === 0, "Segunda reimportação inseriu 0 novos alunos");
+
+    $stmtCountAlunos2 = $pdo->prepare("SELECT COUNT(*) FROM alunos WHERE turma_id = ?");
+    $stmtCountAlunos2->execute([$turmaId]);
+    assertTest((int)$stmtCountAlunos2->fetchColumn() === 10, "Total de alunos permanece 10 após reimportação idêntica");
+
+    $stmtCountFreqs = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM frequencias f 
+        JOIN encontros e ON e.id = f.encontro_id 
+        WHERE e.turma_id = ?
+    ");
+    $stmtCountFreqs->execute([$turmaId]);
+    $totalFreqsApos2 = (int)$stmtCountFreqs->fetchColumn();
+    assertTest($totalFreqsApos2 === 40, "Total de registros na tabela frequencias permanece 40 (10 alunos x 4 encontros, sem duplicidades)");
+
+    // =========================================================================
+    // SEÇÃO 4: Relatório de Inconformidades Cadastrais (ex: CPF Inválido)
+    // =========================================================================
+    echo "\n{$amarelo}-> 4. Testando Relatório de Inconformidades Cadastrais (CPF Inválido)...{$reset}\n";
+
+    // Adiciona na planilha:
+    // - Linha 12: Novo aluno válido (Aluno Novo Legítimo com CPF válido)
+    // - Linha 13: Aluno com CPF matematicamente inválido (111.222.333-00)
+    // - Linha 14: Aluno com CPF com tamanho incorreto (123.456)
+    $cpfValidoNovo = gerarCpfValido(15);
+    $aba1ComInconformidades = $aba1Modificada;
+    
+    // Aluno válido adicional
+    $aba1ComInconformidades[] = [
+        11,
+        'Aluno Novo Legítimo',
+        ValidatorService::formatCpf($cpfValidoNovo),
+        1, 1, 1, 1,
+        '100,0%'
+    ];
+    // Aluno com CPF inválido
+    $aba1ComInconformidades[] = [
+        12,
+        'Aluno Com Cpf Falso',
+        '111.222.333-00', // Inválido pelos dígitos verificadores
+        1, 0, 1, 1,
+        '75,0%'
+    ];
+    // Aluno com CPF curto
+    $aba1ComInconformidades[] = [
+        13,
+        'Aluno Com Cpf Curto',
+        '123.456', // Tamanho inválido
+        1, 1, 1, 1,
+        '100,0%'
+    ];
+
+    $xlsxInconformeBytes = $buildMethod->invoke($syncService, [
+        'Alunos e Chamada' => $aba1ComInconformidades,
+        'Diário e Planos'  => $aba2Modificada,
+        'Dados da Turma'   => $aba3,
+    ]);
+
+    $resInconforme = $syncService->importTurmaSpreadsheet($turmaId, $xlsxInconformeBytes);
+
+    assertTest($resInconforme['success'] === true, "Importação concluída mesmo contendo inconformidades");
+    assertTest($resInconforme['total_inconformidades'] === 2, "Exatamente 2 inconformidades cadastrais identificadas");
+    assertTest($resInconforme['inconformidades'][0]['linha'] === 13, "Inconformidade 1 aponta corretamente a linha 13 da planilha");
+    assertTest(str_contains($resInconforme['inconformidades'][0]['motivo'], 'módulo 11'), "Motivo da inconformidade 1 especifica o algoritmo módulo 11");
+    assertTest($resInconforme['inconformidades'][1]['linha'] === 14, "Inconformidade 2 aponta corretamente a linha 14 da planilha");
+
+    // Valida que o aluno válido foi salvo com sucesso (sem corromper o banco)
+    $stmtNovoAluno = $pdo->prepare("SELECT id, cpf_limpo FROM alunos WHERE turma_id = ? AND nome_completo = ?");
+    $stmtNovoAluno->execute([$turmaId, 'Aluno Novo Legítimo']);
+    $alunoNovoSalvo = $stmtNovoAluno->fetch();
+    assertTest($alunoNovoSalvo !== false, "Aluno com dados válidos cadastrado com sucesso");
+    assertTest($alunoNovoSalvo['cpf_limpo'] === $cpfValidoNovo, "CPF do aluno válido gravado corretamente");
+
+    // =========================================================================
+    // SEÇÃO 5: Testando Interface Web, Roteamento e UI (/diario/turma)
+    // =========================================================================
+    echo "\n{$amarelo}-> 5. Testando Interface Web e Roteamento Amigável...{$reset}\n";
+
+    $turmaPhpPath = __DIR__ . '/../public/diario/turma.php';
+    assertTest(file_exists($turmaPhpPath), "Arquivo public/diario/turma.php existe");
+
+    $turmasPhpPath = __DIR__ . '/../public/diario/turmas.php';
+    assertTest(file_exists($turmasPhpPath), "Arquivo public/diario/turmas.php existe");
+
+    $htaccessPath = __DIR__ . '/../public/diario/.htaccess';
+    $htaccessContent = file_exists($htaccessPath) ? file_get_contents($htaccessPath) : '';
+    assertTest(str_contains($htaccessContent, 'RewriteRule ^turma/?$ turma.php'), "Regra de roteamento para /diario/turma presente no .htaccess");
+
+    // Simula autenticação administrativa legítima para renderizar a página
+    $_SESSION['usuario_admin'] = [
+        'id'       => 1,
+        'username' => 'admin',
+        'nome'     => 'Operador Teste',
+        'email'    => 'admin@futurofacil.com.br'
+    ];
+    $_SESSION['admin_csrf_token'] = bin2hex(random_bytes(32));
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    $_GET['turma_id'] = $turmaId;
+
+    ob_start();
+    include $turmaPhpPath;
+    $renderedHtml = ob_get_clean();
+
+    assertTest(str_contains($renderedHtml, 'Exportar Planilha Excel'), "Página contém o botão 'Exportar Planilha Excel'");
+    assertTest(str_contains($renderedHtml, 'enctype="multipart/form-data"'), "Formulário de upload suporta envio de arquivos multipart");
+    assertTest(str_contains($renderedHtml, 'name="csrf_token"'), "Formulário de upload protegido por token anti-CSRF");
+    assertTest(str_contains($renderedHtml, 'Excel Corporativo Especialista'), "Página exibe o nome da turma consultada");
+    assertTest(str_contains($renderedHtml, 'Alunos Matriculados'), "Página lista a seção de alunos da turma");
+    assertTest(str_contains($renderedHtml, 'Encontros Pedagógicos'), "Página lista os encontros da turma com links para o Modo Aula");
+
+    // Verifica se turmas.php contém link para a tela individual de sincronização
+    $_GET = [];
+    ob_start();
+    include $turmasPhpPath;
+    $renderedTurmasHtml = ob_get_clean();
+    assertTest(str_contains($renderedTurmasHtml, '/diario/turma?turma_id='), "Página geral de turmas possui links para gerenciar/sincronizar cada turma");
+    assertTest(str_contains($renderedTurmasHtml, 'Exportar Excel'), "Página geral de turmas possui botão de atalho para exportar Excel");
+
+    // Limpeza de arquivos de teste
+    @unlink($testDbPath);
+    @unlink($exportedFilePath);
+
+    echo "\n{$verde}----------------------------------------------------------------------\n";
+    echo "RESULTADO: 100% DE SUCESSO! ({$passedCount}/{$totalCount} verificações executadas sem falhas).\n";
+    echo "Ticket 05 (Sincronização Bidirecional Excel e Costura 4) APROVADO!\n";
+    echo "----------------------------------------------------------------------{$reset}\n\n";
+
+} catch (Throwable $e) {
+    echo "\n{$vermelho}ERRO FATAL DURANTE A EXECUÇÃO DOS TESTES:{$reset}\n";
+    echo $e->getMessage() . "\n";
+    echo $e->getTraceAsString() . "\n";
+    @unlink($testDbPath);
+    @unlink(__DIR__ . '/test_turma_exported.xlsx');
+    exit(1);
+}

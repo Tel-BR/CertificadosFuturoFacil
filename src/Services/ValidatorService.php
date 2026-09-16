@@ -100,6 +100,73 @@ class ValidatorService
     }
 
     /**
+     * Remove todos os caracteres não numéricos do CPF.
+     */
+    public static function cleanCpf(?string $cpf): string
+    {
+        if ($cpf === null) {
+            return '';
+        }
+        return preg_replace('/\D/', '', $cpf) ?? '';
+    }
+
+    /**
+     * Formata CPF no padrão brasileiro 000.000.000-00.
+     */
+    public static function formatCpf(?string $cpf): string
+    {
+        $cleaned = self::cleanCpf($cpf);
+        if (strlen($cleaned) === 11) {
+            return substr($cleaned, 0, 3) . '.' .
+                   substr($cleaned, 3, 3) . '.' .
+                   substr($cleaned, 6, 3) . '-' .
+                   substr($cleaned, 9, 2);
+        }
+        return $cleaned;
+    }
+
+    /**
+     * Valida matematicamente um CPF brasileiro segundo o algoritmo módulo 11.
+     * Rejeita tamanhos diferentes de 11, dígitos idênticos repetidos e dígitos verificadores inconsistentes.
+     */
+    public static function validateCpf(?string $cpf): bool
+    {
+        $cleaned = self::cleanCpf($cpf);
+        if (strlen($cleaned) !== 11) {
+            return false;
+        }
+
+        // Rejeita sequências com todos os dígitos idênticos (ex: 11111111111)
+        if ($cleaned === str_repeat($cleaned[0], 11)) {
+            return false;
+        }
+
+        // Primeiro dígito verificador (pesos 10 a 2)
+        $soma1 = 0;
+        for ($i = 0; $i < 9; $i++) {
+            $soma1 += (int)$cleaned[$i] * (10 - $i);
+        }
+        $resto1 = $soma1 % 11;
+        $dv1 = ($resto1 < 2) ? 0 : 11 - $resto1;
+        if ((int)$cleaned[9] !== $dv1) {
+            return false;
+        }
+
+        // Segundo dígito verificador (pesos 11 a 2)
+        $soma2 = 0;
+        for ($i = 0; $i < 10; $i++) {
+            $soma2 += (int)$cleaned[$i] * (11 - $i);
+        }
+        $resto2 = $soma2 % 11;
+        $dv2 = ($resto2 < 2) ? 0 : 11 - $resto2;
+        if ((int)$cleaned[10] !== $dv2) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Valida um código de autenticidade contra a base de registros.
      * Executa estritamente consulta SELECT preparada somente-leitura.
      */
