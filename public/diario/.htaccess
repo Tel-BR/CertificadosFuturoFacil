@@ -26,6 +26,12 @@ AddDefaultCharset UTF-8
     # Rota do Calendário
     RewriteRule ^calendario/?$ calendario.php [L,QSA]
 
+    # Rota do Modo Aula (Chamada em Tempo Real)
+    RewriteRule ^aula/?$ aula.php [L,QSA]
+
+    # Rota de Turmas e Diário Ativo
+    RewriteRule ^turmas/?$ turmas.php [L,QSA]
+
     # Se a requisição não for arquivo ou diretório físico existente, envia para index.php
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d

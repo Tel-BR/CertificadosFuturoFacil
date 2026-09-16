@@ -1256,7 +1256,7 @@ ob_start();
                     <p style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 0.5rem;">Cliente: <strong>${enc.cliente}</strong> | Horário: <strong>${enc.horario}</strong></p>
                     
                     <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
-                        <a href="/diario/turmas?turma_id=${enc.turma_id}&encontro_id=${enc.encontro_id}" class="btn-submit" style="font-size: 0.78rem; text-decoration: none; padding: 0.4rem 0.8rem;">
+                        <a href="/diario/aula?encontro_id=${enc.encontro_id}" class="btn-submit" style="font-size: 0.78rem; text-decoration: none; padding: 0.4rem 0.8rem;">
                             Abrir Diário & Chamada
                         </a>
                     </div>
