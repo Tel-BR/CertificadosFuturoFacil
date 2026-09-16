@@ -562,8 +562,7 @@ def render_anverso(
 
     c.setFont(get_font_black(), 10.5)
     c.setFillColor(primary_col)
-    instrutor_nome_raw = registro.instrutor.strip() if (registro.instrutor and registro.instrutor.strip()) else config.instructor_default
-    instrutor_nome = instrutor_nome_raw.upper() if instrutor_nome_raw else ""
+    instrutor_nome = registro.instrutor.strip() if (registro.instrutor and registro.instrutor.strip()) else config.instructor_default
     c.drawCentredString(sig2_x + sig_w / 2.0, sig_y - 14, instrutor_nome)
 
     c.setFont(get_font_regular(), 8.5)
