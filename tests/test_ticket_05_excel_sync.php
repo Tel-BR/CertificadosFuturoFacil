@@ -141,10 +141,12 @@ try {
         $alunoIds[] = (int)$pdo->lastInsertId();
     }
 
-    // Registra chamada do Encontro 1 com todos presentes
+    // Registra chamada dos 4 Encontros com todos presentes inicialmente
     $stmtFreqInit = $pdo->prepare("INSERT INTO frequencias (encontro_id, aluno_id, presente) VALUES (?, ?, ?)");
-    foreach ($alunoIds as $aId) {
-        $stmtFreqInit->execute([$encontroIds[1], $aId, 1]);
+    for ($encIdx = 1; $encIdx <= 4; $encIdx++) {
+        foreach ($alunoIds as $aId) {
+            $stmtFreqInit->execute([$encontroIds[$encIdx], $aId, 1]);
+        }
     }
 
     $syncService = new ExcelSyncService($pdo);
@@ -263,6 +265,18 @@ try {
     $aba2Modificada = $aba2;
     $novoConteudoMin2 = "Aula 2 ministrada offline: Fórmulas Matriciais e Tabelas Dinâmicas avançadas com filtros dinâmicos.";
     $aba2Modificada[2][8] = $novoConteudoMin2;
+    $aba2Modificada[2][3] = '14:30'; // Novo horário de início
+    $aba2Modificada[2][4] = '18:30'; // Novo horário de término
+
+    $aba3Modificada = $aba3;
+    foreach ($aba3Modificada as &$r) {
+        if (isset($r[0]) && trim((string)$r[0]) === 'Data de Início') {
+            $r[1] = '05/10/2026';
+        } elseif (isset($r[0]) && trim((string)$r[0]) === 'Data de Conclusão') {
+            $r[1] = '28/10/2026';
+        }
+    }
+    unset($r);
 
     // Constrói novo binário com as modificações
     $archiveReflection = new ReflectionClass(ExcelSyncService::class);
@@ -271,7 +285,7 @@ try {
     $xlsxModificadoBytes = $buildMethod->invoke($syncService, [
         'Alunos e Chamada' => $aba1Modificada,
         'Diário e Planos'  => $aba2Modificada,
-        'Dados da Turma'   => $aba3,
+        'Dados da Turma'   => $aba3Modificada,
     ]);
 
     // Primeira reimportação da planilha modificada
@@ -313,6 +327,20 @@ try {
     $conteudoMin2Banco = $stmtEncCheck->fetchColumn();
     assertTest($conteudoMin2Banco === $novoConteudoMin2, "Conteúdo ministrado da aula 2 atualizado fielmente pelo Excel");
 
+    // Verifica atualização de horários no Encontro 2
+    $stmtHorarios = $pdo->prepare("SELECT horario_inicio, horario_fim FROM encontros WHERE id = ?");
+    $stmtHorarios->execute([$encontroIds[2]]);
+    $enc2Horarios = $stmtHorarios->fetch();
+    assertTest($enc2Horarios['horario_inicio'] === '14:30:00', "Horário de início do Encontro 2 atualizado pelo Excel (14:30:00)");
+    assertTest($enc2Horarios['horario_fim'] === '18:30:00', "Horário de término do Encontro 2 atualizado pelo Excel (18:30:00)");
+
+    // Verifica atualização de datas da Turma (Aba 3)
+    $stmtDatasTurma = $pdo->prepare("SELECT data_inicio, data_conclusao FROM turmas WHERE id = ?");
+    $stmtDatasTurma->execute([$turmaId]);
+    $turmaDatas = $stmtDatasTurma->fetch();
+    assertTest($turmaDatas['data_inicio'] === '2026-10-05', "Data de início da turma atualizada pelo Excel (2026-10-05)");
+    assertTest($turmaDatas['data_conclusao'] === '2026-10-28', "Data de conclusão da turma atualizada pelo Excel (2026-10-28)");
+
     // Reimportação idêntica consecutiva (teste de idempotência estrita)
     $resImport2 = $syncService->importTurmaSpreadsheet($turmaId, $xlsxModificadoBytes);
     assertTest($resImport2['success'] === true, "Segunda reimportação idêntica executada com sucesso");
@@ -331,6 +359,25 @@ try {
     $stmtCountFreqs->execute([$turmaId]);
     $totalFreqsApos2 = (int)$stmtCountFreqs->fetchColumn();
     assertTest($totalFreqsApos2 === 40, "Total de registros na tabela frequencias permanece 40 (10 alunos x 4 encontros, sem duplicidades)");
+
+    // Testa encontro pendente com célula vazia (não deve gerar presenças nem faltas indevidas)
+    $stmtEncPendente = $pdo->prepare("
+        INSERT INTO encontros (turma_id, numero_encontro, data_encontro, turno, horario_inicio, horario_fim, tipo)
+        VALUES (?, 5, '2026-09-18', 'V', '14:00', '18:00', 'aula')
+    ");
+    $stmtEncPendente->execute([$turmaId]);
+    $enc5Id = (int)$pdo->lastInsertId();
+
+    $xlsxPendente = $syncService->exportTurmaSpreadsheet($turmaId);
+    $parsedPendente = $syncService->parseXlsx($xlsxPendente);
+    // Verifica que a coluna do Encontro 5 na exportação veio com célula vazia ''
+    assertTest($parsedPendente['Alunos e Chamada'][1][7] === '', "Encontro 5 pendente exportado com célula vazia (sem presença forçada)");
+
+    // Reimporta a planilha com Encontro 5 vazio
+    $syncService->importTurmaSpreadsheet($turmaId, $xlsxPendente);
+    $stmtCheckEnc5 = $pdo->prepare("SELECT COUNT(*) FROM frequencias WHERE encontro_id = ?");
+    $stmtCheckEnc5->execute([$enc5Id]);
+    assertTest((int)$stmtCheckEnc5->fetchColumn() === 0, "Células vazias de encontro futuro ignoradas sem registrar faltas ou presenças indevidas");
 
     // =========================================================================
     // SEÇÃO 4: Relatório de Inconformidades Cadastrais (ex: CPF Inválido)
@@ -389,6 +436,15 @@ try {
     $alunoNovoSalvo = $stmtNovoAluno->fetch();
     assertTest($alunoNovoSalvo !== false, "Aluno com dados válidos cadastrado com sucesso");
     assertTest($alunoNovoSalvo['cpf_limpo'] === $cpfValidoNovo, "CPF do aluno válido gravado corretamente");
+
+    // Valida que alunos novos com CPF inválido NÃO foram inseridos no banco
+    $stmtInvalido1 = $pdo->prepare("SELECT id FROM alunos WHERE turma_id = ? AND nome_completo = ?");
+    $stmtInvalido1->execute([$turmaId, 'Aluno Com Cpf Falso']);
+    assertTest($stmtInvalido1->fetch() === false, "Aluno novo com CPF inválido não foi inserido no banco de dados");
+
+    $stmtInvalido2 = $pdo->prepare("SELECT id FROM alunos WHERE turma_id = ? AND nome_completo = ?");
+    $stmtInvalido2->execute([$turmaId, 'Aluno Com Cpf Curto']);
+    assertTest($stmtInvalido2->fetch() === false, "Aluno novo com CPF de tamanho curto não foi inserido no banco de dados");
 
     // =========================================================================
     // SEÇÃO 5: Testando Interface Web, Roteamento e UI (/diario/turma)

@@ -119,11 +119,10 @@ class ExcelSyncService
             foreach ($aulasEncontros as $enc) {
                 $encId = (int)$enc['id'];
                 if (isset($hasRecordForEnc[$encId])) {
-                    $pres = $freqMatrix[$encId][$alunoId] ?? 0;
+                    $row[] = (int)($freqMatrix[$encId][$alunoId] ?? 0);
                 } else {
-                    $pres = 1;
+                    $row[] = ''; // Encontro pendente de chamada
                 }
-                $row[] = (int)$pres;
             }
 
             $freqPerc = isset($cumulativeFrequencies[$alunoId])
@@ -274,6 +273,28 @@ class ExcelSyncService
                     $params[] = $metaMap['ementa oficial'];
                 }
 
+                $dataInicio = $metaMap['data de início'] ?? $metaMap['data de inicio'] ?? null;
+                if ($dataInicio !== null && $dataInicio !== '') {
+                    if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $dataInicio, $m)) {
+                        $dataInicio = sprintf('%04d-%02d-%02d', (int)$m[3], (int)$m[2], (int)$m[1]);
+                    }
+                    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataInicio)) {
+                        $updates[] = "data_inicio = ?";
+                        $params[] = $dataInicio;
+                    }
+                }
+
+                $dataFim = $metaMap['data de conclusão'] ?? $metaMap['data de conclusao'] ?? null;
+                if ($dataFim !== null && $dataFim !== '') {
+                    if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $dataFim, $m)) {
+                        $dataFim = sprintf('%04d-%02d-%02d', (int)$m[3], (int)$m[2], (int)$m[1]);
+                    }
+                    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataFim)) {
+                        $updates[] = "data_conclusao = ?";
+                        $params[] = $dataFim;
+                    }
+                }
+
                 if (!empty($updates)) {
                     $updates[] = "updated_at = CURRENT_TIMESTAMP";
                     $params[] = $turmaId;
@@ -293,6 +314,8 @@ class ExcelSyncService
                 $colPrevIdx = $this->findColumnIndex($headerP, ['conteúdo previsto', 'conteudo previsto', 'previsto']);
                 $colMinIdx = $this->findColumnIndex($headerP, ['conteúdo ministrado', 'conteudo ministrado', 'ministrado']);
                 $colDataIdx = $this->findColumnIndex($headerP, ['data', 'data da aula']);
+                $colHoraIniIdx = $this->findColumnIndex($headerP, ['horário início', 'horario inicio', 'horário inicio', 'horario início']);
+                $colHoraFimIdx = $this->findColumnIndex($headerP, ['horário fim', 'horario fim', 'horário término', 'horario termino']);
 
                 for ($i = 1; $i < count($sheetPlanos); $i++) {
                     $row = $sheetPlanos[$i];
@@ -308,6 +331,8 @@ class ExcelSyncService
                     $conteudoPrevisto = ($colPrevIdx !== -1 && isset($row[$colPrevIdx])) ? trim((string)$row[$colPrevIdx]) : null;
                     $conteudoMinistrado = ($colMinIdx !== -1 && isset($row[$colMinIdx])) ? trim((string)$row[$colMinIdx]) : null;
                     $dataEnc = ($colDataIdx !== -1 && isset($row[$colDataIdx])) ? trim((string)$row[$colDataIdx]) : null;
+                    $horaIni = ($colHoraIniIdx !== -1 && isset($row[$colHoraIniIdx])) ? trim((string)$row[$colHoraIniIdx]) : null;
+                    $horaFim = ($colHoraFimIdx !== -1 && isset($row[$colHoraFimIdx])) ? trim((string)$row[$colHoraFimIdx]) : null;
 
                     if ($dataEnc && preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $dataEnc, $m)) {
                         $dataEnc = sprintf('%04d-%02d-%02d', (int)$m[3], (int)$m[2], (int)$m[1]);
@@ -333,6 +358,14 @@ class ExcelSyncService
                         if ($dataEnc !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataEnc)) {
                             $encUpdates[] = "data_encontro = ?";
                             $encParams[] = $dataEnc;
+                        }
+                        if ($horaIni !== null && preg_match('/^(\d{1,2}):(\d{2})/', $horaIni, $m)) {
+                            $encUpdates[] = "horario_inicio = ?";
+                            $encParams[] = sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]);
+                        }
+                        if ($horaFim !== null && preg_match('/^(\d{1,2}):(\d{2})/', $horaFim, $m)) {
+                            $encUpdates[] = "horario_fim = ?";
+                            $encParams[] = sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]);
                         }
 
                         if (!empty($encUpdates)) {
@@ -487,6 +520,11 @@ class ExcelSyncService
                     }
                     $alunosAtualizados++;
                 } else {
+                    if (!$cpfValido) {
+                        // Não insere novo aluno com dados cadastrais inválidos/corrompidos
+                        continue;
+                    }
+
                     // Insere novo aluno
                     $stmtInsAluno = $this->pdo->prepare("
                         INSERT INTO alunos (turma_id, nome_completo, cpf, cpf_limpo, cpf_mascarado)
@@ -509,6 +547,11 @@ class ExcelSyncService
                     }
 
                     $rawVal = trim((string)$row[$cIdx]);
+                    if ($rawVal === '') {
+                        // Célula vazia indica encontro futuro/pendente ou chamada não realizada
+                        continue;
+                    }
+
                     $presente = $this->normalizePresenceValue($rawVal);
 
                     // Idempotência na tabela frequencias
