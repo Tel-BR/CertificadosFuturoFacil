@@ -553,6 +553,7 @@ def render_anverso(
                 target_h = target_w / aspect
             img_x = sig2_x + (sig_w - target_w) / 2.0
             img_y = sig_y + 2.0
+            c.drawImage(sig_img, img_x, img_y, width=target_w, height=target_h, preserveAspectRatio=True, mask="auto")
         except Exception:
             pass
 
