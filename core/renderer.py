@@ -553,7 +553,6 @@ def render_anverso(
                 target_h = target_w / aspect
             img_x = sig2_x + (sig_w - target_w) / 2.0
             img_y = sig_y + 2.0
-            c.drawImage(sig_img, img_x, img_y, width=target_w, height=target_h, preserveAspectRatio=True, mask="auto")
         except Exception:
             pass
 
@@ -563,7 +562,8 @@ def render_anverso(
 
     c.setFont(get_font_black(), 10.5)
     c.setFillColor(primary_col)
-    instrutor_nome = registro.instrutor.strip() if (registro.instrutor and registro.instrutor.strip()) else config.instructor_default
+    instrutor_nome_raw = registro.instrutor.strip() if (registro.instrutor and registro.instrutor.strip()) else config.instructor_default
+    instrutor_nome = instrutor_nome_raw.upper() if instrutor_nome_raw else ""
     c.drawCentredString(sig2_x + sig_w / 2.0, sig_y - 14, instrutor_nome)
 
     c.setFont(get_font_regular(), 8.5)
