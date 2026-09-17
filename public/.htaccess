@@ -1,0 +1,4 @@
+# Proteção quando public/ é implantado como document root Apache.
+<FilesMatch "\.(?:db|sqlite|sqlite3)(?:-(?:wal|shm|journal))?$">
+    Require all denied
+</FilesMatch>
