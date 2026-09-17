@@ -218,7 +218,7 @@ class MaterialService
             INSERT INTO materiais_turma (
                 turma_id, titulo, descricao, tipo, caminho_arquivo, url_externa, tamanho_bytes, ordem, ativo, created_at, updated_at
             ) VALUES (
-                :turma_id, :titulo, :descricao, :tipo, :caminho_arquivo, :url_externa, :tamanho_bytes, :ordem, :ativo, datetime('now'), datetime('now')
+                :turma_id, :titulo, :descricao, :tipo, :caminho_arquivo, :url_externa, :tamanho_bytes, :ordem, :ativo, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
         ");
 
@@ -262,7 +262,7 @@ class MaterialService
                 ordem = :ordem,
                 ativo = :ativo,
                 url_externa = :url_externa,
-                updated_at = datetime('now')
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = :id
         ");
 
@@ -285,7 +285,7 @@ class MaterialService
         $stmt = $this->pdo->prepare("
             UPDATE materiais_turma 
             SET ativo = CASE WHEN ativo = 1 THEN 0 ELSE 1 END,
-                updated_at = datetime('now')
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = :id
         ");
         return $stmt->execute(['id' => $materialId]);
@@ -337,7 +337,7 @@ class MaterialService
         $stmt = $this->pdo->prepare("
             UPDATE turmas 
             SET chave_acesso = :chave,
-                updated_at = datetime('now')
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = :turma_id
         ");
         return $stmt->execute(['chave' => $chaveLimpa, 'turma_id' => $turmaId]);
@@ -359,7 +359,7 @@ class MaterialService
         $stmt = $this->pdo->prepare("
             UPDATE turmas 
             SET portal_certificados_modo = :modo,
-                updated_at = datetime('now')
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = :turma_id
         ");
         return $stmt->execute(['modo' => $modo, 'turma_id' => $turmaId]);
