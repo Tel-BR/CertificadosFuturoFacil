@@ -1,4 +1,4 @@
-﻿# 10: Lixeira de Turmas, Soft Delete e Restauração Segura de Capacidade
+# 10: Lixeira de Turmas, Soft Delete e Restauração Segura de Capacidade
 
 **What to build:**
 Permitir o tratamento seguro de falhas humanas no agendamento através de uma Lixeira com soft-delete (`deleted_at`): ao descartar uma turma criada por engano ou cancelada bruscamente, seus horários e turnos são imediatamente desocupados no calendário de capacidade pedagógica sem destruição física dos dados; o operador pode acessar a aba de Lixeira para consultar o histórico de exclusões, restaurar a turma de volta para a grade ativa (com verificação prévia de conflitos de horário) ou executar o expurgo definitivo caso a turma não possua assentos registrados no Livro de Registro Digital.

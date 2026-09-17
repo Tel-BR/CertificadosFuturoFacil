@@ -1,4 +1,4 @@
-﻿# 11: Sincronização Excel com Prévia de Diff Visual e Preservação de Dados
+# 11: Sincronização Excel com Prévia de Diff Visual e Preservação de Dados
 
 **What to build:**
 Aprimorar o fluxo de sincronização bidirecional com planilhas Excel (.xlsx): ao enviar uma planilha atualizada da turma, o operador é recepcionado por um modal/tela de prévia com Diff Visual detalhado destacando exatamente o que será inserido, atualizado ou mantido inalterado antes da efetivação no banco; caso uma aba venha vazia (ex: aba de alunos não preenchida porque o operador só alterou o calendário), o sistema aplica a Regra Estrita de Preservação, mantendo 100% dos alunos cadastrados intactos sem deleção acidental; e o reagendamento de datas via Excel preserva o histórico integral de chamadas e planos já executados.

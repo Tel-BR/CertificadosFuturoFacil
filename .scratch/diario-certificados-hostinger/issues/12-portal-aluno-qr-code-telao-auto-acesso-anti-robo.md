@@ -1,10 +1,11 @@
-﻿# 12: Portal do Aluno — QR Code Projetável no Telão e Auto-Acesso com Barreira Anti-Robô
+# 12: Portal do Aluno — QR Code Projetável no Telão e Auto-Acesso com Barreira Anti-Robô
 
 **What to build:**
 Oferecer aos alunos em sala de aula um onboarding com atrito mínimo e máxima segurança contra vazamento de materiais: o professor ativa o "Modo Telão" no Modo Aula ou na tela da turma para projetar o QR Code em tela cheia com alto contraste; o aluno escaneia o código pelo celular e acessa a página de recepção onde informa unicamente seu e-mail e resolve uma barreira anti-robô (Cloudflare Turnstile ou Honeypot com Rate-Limit estrito); o sistema envia automaticamente um e-mail transacional com o link direto e o código de acesso da turma, blindando os downloads da propriedade intelectual contra acessos não autorizados por terceiros.
 
 **Blocked by:**
 07: Área Protegida de Conteúdo da Turma (Autenticação e Blindagem de Downloads)
+09: Gerenciamento Completo de Turmas, Modo Multi-Seleção no Calendário e Override de Encontros
 
 **Status:** ready-for-agent
 
