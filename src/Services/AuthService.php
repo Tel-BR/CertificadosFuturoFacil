@@ -238,6 +238,232 @@ class AuthService
     }
 
     /**
+     * Alias de conveniência para validateCsrfToken.
+     */
+    public static function verifyCsrfToken(?string $token): bool
+    {
+        return self::validateCsrfToken($token);
+    }
+
+    /**
+     * Autentica o aluno através da Chave de Acesso da Turma.
+     *
+     * @param string $chaveAcesso Chave fornecida pelo aluno
+     * @param string|null $identificadorEsperado Slug ou código de turma opcional para validação cruzada
+     * @return array{success: bool, error?: string, turma?: array}
+     */
+    public function authenticateStudent(string $chaveAcesso, ?string $identificadorEsperado = null): array
+    {
+        $chaveAcesso = trim($chaveAcesso);
+
+        if (empty($chaveAcesso)) {
+            return [
+                'success' => false,
+                'error'   => 'Por favor, informe a Chave de Acesso da Turma.',
+            ];
+        }
+
+        // Busca a turma no banco pela chave de acesso
+        $stmt = $this->pdo->prepare("
+            SELECT * FROM turmas 
+            WHERE LOWER(TRIM(chave_acesso)) = LOWER(:chave) 
+            LIMIT 1
+        ");
+        $stmt->execute(['chave' => $chaveAcesso]);
+        $turma = $stmt->fetch();
+
+        // Se não encontrou pela chave direta, verifica se a chave bate com o código da turma
+        if (!$turma) {
+            $stmtAlt = $this->pdo->prepare("
+                SELECT * FROM turmas 
+                WHERE LOWER(TRIM(codigo_turma)) = LOWER(:cod)
+                LIMIT 1
+            ");
+            $stmtAlt->execute(['cod' => $chaveAcesso]);
+            $turma = $stmtAlt->fetch();
+        }
+
+        if (!$turma) {
+            $this->recordStudentFailedAttempt();
+            return [
+                'success' => false,
+                'error'   => 'Chave de acesso não reconhecida. Verifique a chave informada pelo instrutor ou solicite suporte.',
+            ];
+        }
+
+        // Bloqueia acesso se a turma estiver cancelada
+        if ($turma['status'] === 'cancelada') {
+            return [
+                'success' => false,
+                'error'   => 'O acesso aos materiais desta turma cancelada foi desativado.',
+            ];
+        }
+
+        // Validação cruzada com identificador esperado (slug na URL), se fornecido
+        if ($identificadorEsperado !== null && trim($identificadorEsperado) !== '') {
+            $identEsperado = strtolower(trim($identificadorEsperado));
+            $chaveTurma = strtolower(trim((string)$turma['chave_acesso']));
+            $codigoTurma = strtolower(trim((string)$turma['codigo_turma']));
+
+            // Se o identificador esperado não bate nem com a chave nem com o código
+            if ($identEsperado !== $chaveTurma && $identEsperado !== $codigoTurma) {
+                // Checa se o identificador esperado pertence a outra turma existente
+                $stmtCheck = $this->pdo->prepare("
+                    SELECT id FROM turmas 
+                    WHERE LOWER(TRIM(chave_acesso)) = :id OR LOWER(TRIM(codigo_turma)) = :id 
+                    LIMIT 1
+                ");
+                $stmtCheck->execute(['id' => $identEsperado]);
+                $outraTurma = $stmtCheck->fetch();
+                if ($outraTurma && (int)$outraTurma['id'] !== (int)$turma['id']) {
+                    $this->recordStudentFailedAttempt();
+                    return [
+                        'success' => false,
+                        'error'   => 'A chave informada não pertence a esta turma específica.',
+                    ];
+                }
+            }
+        }
+
+        // Sucesso: limpa tentativas falhas de aluno
+        $this->clearStudentFailedAttempts();
+
+        // Inicializa sessão segura e regenera ID para prevenir fixation
+        self::startSecureSession();
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+
+            // Estende cookie de sessão para 30 dias se cabeçalhos ainda permitirem
+            if (!headers_sent()) {
+                $cookieParams = session_get_cookie_params();
+                setcookie(
+                    session_name(),
+                    session_id(),
+                    time() + (30 * 86400),
+                    $cookieParams['path'],
+                    $cookieParams['domain'],
+                    $cookieParams['secure'],
+                    $cookieParams['httponly']
+                );
+            }
+        }
+
+        // Armazena escopo do aluno na sessão (estritamente isolado do admin)
+        $_SESSION[self::SESSION_STUDENT_KEY] = [
+            'turma_id'         => (int)$turma['id'],
+            'codigo_turma'     => (string)$turma['codigo_turma'],
+            'curso_nome'       => (string)$turma['curso_nome'],
+            'chave_acesso'     => (string)$turma['chave_acesso'],
+            'cliente_nome'     => (string)($turma['cliente_nome'] ?? ''),
+            'status'           => (string)$turma['status'],
+            'portal_certificados_modo' => (string)($turma['portal_certificados_modo'] ?? 'nenhum'),
+            'expira_em'        => time() + (30 * 86400),
+            'authenticated_at' => date('Y-m-d H:i:s'),
+        ];
+
+        return [
+            'success' => true,
+            'turma'   => $turma,
+        ];
+    }
+
+    /**
+     * Verifica se há sessão ativa de aluno (e opcionalmente se pertence a uma turma específica).
+     */
+    public static function isStudentAuthenticated(?int $turmaId = null): bool
+    {
+        self::startSecureSession();
+        if (empty($_SESSION[self::SESSION_STUDENT_KEY]['turma_id'])) {
+            return false;
+        }
+        if ($turmaId !== null) {
+            return (int)$_SESSION[self::SESSION_STUDENT_KEY]['turma_id'] === $turmaId;
+        }
+        return true;
+    }
+
+    /**
+     * Retorna os dados da turma na sessão do aluno ou null.
+     */
+    public static function getAuthenticatedStudentTurma(): ?array
+    {
+        self::startSecureSession();
+        return $_SESSION[self::SESSION_STUDENT_KEY] ?? null;
+    }
+
+    /**
+     * Realiza logout seguro do aluno, preservando a sessão do operador administrativo.
+     */
+    public static function logoutStudent(): void
+    {
+        self::startSecureSession();
+        unset($_SESSION[self::SESSION_STUDENT_KEY]);
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+    }
+
+    /**
+     * Guardião de rota de alunos: exige autenticação da turma.
+     */
+    public static function requireStudentAuth(?int $turmaId = null, string $redirectUrl = '/turmas'): array
+    {
+        self::startSecureSession();
+        if (!self::isStudentAuthenticated($turmaId)) {
+            if (!headers_sent()) {
+                header("Location: {$redirectUrl}");
+            }
+            exit;
+        }
+        return $_SESSION[self::SESSION_STUDENT_KEY];
+    }
+
+    /**
+     * Registra tentativa incorreta de aluno na sessão e calcula delay progressivo.
+     * Retorna o atraso em segundos (1s, 2s, 4s).
+     */
+    public function recordStudentFailedAttempt(?string $ipAddress = null, bool $applySleep = true): int
+    {
+        self::startSecureSession();
+        $attempts = (int)($_SESSION['student_failed_attempts'] ?? 0) + 1;
+        $_SESSION['student_failed_attempts'] = $attempts;
+        $_SESSION['student_last_failed_time'] = time();
+
+        // Delay progressivo amigável a redes corporativas compartilhadas (NAT/Wi-Fi):
+        // 1 erro: 1s; 2 erros: 2s; 3+ erros: 4s
+        $delay = match (true) {
+            $attempts === 1 => 1,
+            $attempts === 2 => 2,
+            default         => 4,
+        };
+
+        if ($delay > 0 && $applySleep && php_sapi_name() !== 'cli') {
+            sleep($delay);
+        }
+
+        return $delay;
+    }
+
+    /**
+     * Retorna a contagem atual de tentativas incorretas de chave de aluno na sessão.
+     */
+    public function getStudentFailedAttempts(?string $ipAddress = null): int
+    {
+        self::startSecureSession();
+        return (int)($_SESSION['student_failed_attempts'] ?? 0);
+    }
+
+    /**
+     * Limpa tentativas falhas de aluno na sessão após autenticação com sucesso.
+     */
+    public function clearStudentFailedAttempts(?string $ipAddress = null): void
+    {
+        self::startSecureSession();
+        unset($_SESSION['student_failed_attempts']);
+        unset($_SESSION['student_last_failed_time']);
+    }
+
+    /**
      * Retorna o endereço IP do cliente.
      */
     public function getClientIp(): string

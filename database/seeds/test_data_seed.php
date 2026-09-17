@@ -81,7 +81,45 @@ try {
             'turno_padrao'   => 'V',
             'status'         => 'concluida',
             'chave_acesso'   => 'sicoob-excel-2026',
+            'portal_certificados_modo' => 'download_direto',
             'instrutor'      => 'Instrutor Futuro Fácil',
+            'materiais'      => [
+                [
+                    'titulo'    => 'Apostila Oficial - Excel Especialista & Fórmulas Financeiras',
+                    'descricao' => 'Material didático completo com teoria, atalhos e exemplos práticos.',
+                    'tipo'      => 'apostila',
+                    'ordem'     => 1,
+                    'ativo'     => 1,
+                    'arquivo'   => 'Apostila_Excel_Sicoob.pdf',
+                    'conteudo'  => "%PDF-1.4 Mock Sicoob Apostila PDF\n",
+                ],
+                [
+                    'titulo'    => 'Planilha de Exercícios Práticos - PROCV e Modelagem Financeira',
+                    'descricao' => 'Arquivo de trabalho utilizado nas aulas práticas da turma.',
+                    'tipo'      => 'exercicio',
+                    'ordem'     => 2,
+                    'ativo'     => 1,
+                    'arquivo'   => 'Exercicios_Modelagem_Sicoob.xlsx',
+                    'conteudo'  => "PK Mock XLSX Exercicios\n",
+                ],
+                [
+                    'titulo'    => 'Gabarito das Fórmulas Avançadas (Oculto pelo Instrutor)',
+                    'descricao' => 'Resolução das tarefas práticas para liberação ao término das avaliações.',
+                    'tipo'      => 'exercicio',
+                    'ordem'     => 3,
+                    'ativo'     => 0,
+                    'arquivo'   => 'Gabarito_Formulas_Sicoob.xlsx',
+                    'conteudo'  => "PK Mock XLSX Gabarito\n",
+                ],
+                [
+                    'titulo'    => 'Vídeo Tutorial: Atalhos Essenciais no Excel',
+                    'descricao' => 'Gravação complementar com dicas de produtividade rápida.',
+                    'tipo'      => 'link',
+                    'ordem'     => 4,
+                    'ativo'     => 1,
+                    'url'       => 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                ],
+            ],
             'encontros'      => [
                 [
                     'numero'    => 1,
@@ -129,7 +167,27 @@ try {
             'turno_padrao'   => 'M',
             'status'         => 'concluida',
             'chave_acesso'   => 'sebrae-dash-2026',
+            'portal_certificados_modo' => 'coordenacao',
             'instrutor'      => 'Instrutor Futuro Fácil',
+            'materiais'      => [
+                [
+                    'titulo'    => 'Guia de Indicadores e Dashboards Estratégicos',
+                    'descricao' => 'Apostila de métricas para pequenas e médias empresas.',
+                    'tipo'      => 'apostila',
+                    'ordem'     => 1,
+                    'ativo'     => 1,
+                    'arquivo'   => 'Guia_Dashboards_Sebrae.pdf',
+                    'conteudo'  => "%PDF-1.4 Mock Sebrae Guia PDF\n",
+                ],
+                [
+                    'titulo'    => 'Pesquisa de Satisfação do Workshop Sebrae',
+                    'descricao' => 'Formulário de feedback dos participantes.',
+                    'tipo'      => 'link',
+                    'ordem'     => 2,
+                    'ativo'     => 1,
+                    'url'       => 'https://docs.google.com/forms/d/e/1FAIpQLScMockForms/viewform',
+                ],
+            ],
             'encontros'      => [
                 [
                     'numero'    => 1,
@@ -175,7 +233,19 @@ try {
             'turno_padrao'   => 'M',
             'status'         => 'em_andamento',
             'chave_acesso'   => 'sicredi-dax-2026',
+            'portal_certificados_modo' => 'nenhum',
             'instrutor'      => 'Instrutor Futuro Fácil',
+            'materiais'      => [
+                [
+                    'titulo'    => 'Apostila Oficial - Power BI Corporativo e DAX',
+                    'descricao' => 'Fundamentos de modelagem dimensional e funções DAX avançadas.',
+                    'tipo'      => 'apostila',
+                    'ordem'     => 1,
+                    'ativo'     => 1,
+                    'arquivo'   => 'Apostila_PowerBI_Sicredi.pdf',
+                    'conteudo'  => "%PDF-1.4 Mock Sicredi PBI PDF\n",
+                ],
+            ],
             'encontros'      => [
                 [
                     'numero'    => 1,
@@ -330,12 +400,12 @@ try {
             codigo_turma, curso_nome, cliente_nome, ordem_servico, modalidade, cliente_tipo,
             cliente_cidade, cliente_uf, tipo_cobranca, valor_hora_aula, valor_total,
             carga_horaria, carga_horaria_extenso, data_inicio, data_conclusao, turno_padrao,
-            status, chave_acesso, instrutor
+            status, chave_acesso, portal_certificados_modo, instrutor
         ) VALUES (
             :codigo, :curso, :cliente, :os, :modalidade, :cliente_tipo,
             :cidade, :uf, :tipo_cobranca, :valor_hora, :valor_total,
             :carga_horaria, :carga_extenso, :data_inicio, :data_conclusao, :turno,
-            :status, :chave, :instrutor
+            :status, :chave, :portal_modo, :instrutor
         )
     ");
 
@@ -362,6 +432,16 @@ try {
         VALUES (:encontro_id, :aluno_id, :presente)
     ");
 
+    $stmtMaterial = $pdo->prepare("
+        INSERT INTO materiais_turma (
+            turma_id, titulo, descricao, tipo, caminho_arquivo, url_externa, tamanho_bytes, ordem, ativo
+        ) VALUES (
+            :turma_id, :titulo, :descricao, :tipo, :caminho, :url, :tamanho, :ordem, :ativo
+        )
+    ");
+
+    $baseArquivosDir = dirname(__DIR__, 2) . '/public/turmas/arquivos';
+
     foreach ($turmasSeed as $t) {
         $stmtTurma->execute([
             ':codigo'        => $t['codigo'],
@@ -382,6 +462,7 @@ try {
             ':turno'         => $t['turno_padrao'],
             ':status'        => $t['status'],
             ':chave'         => $t['chave_acesso'],
+            ':portal_modo'   => $t['portal_certificados_modo'] ?? 'nenhum',
             ':instrutor'     => $t['instrutor'],
         ]);
 
@@ -424,6 +505,38 @@ try {
                         ':presente'    => 1,
                     ]);
                 }
+            }
+        }
+
+        // Inserção de materiais didáticos vinculados à turma
+        if (!empty($t['materiais'])) {
+            $turmaFolder = $baseArquivosDir . '/' . $turmaId;
+            if (!is_dir($turmaFolder)) {
+                @mkdir($turmaFolder, 0755, true);
+            }
+
+            foreach ($t['materiais'] as $mat) {
+                $caminhoRel = null;
+                $tamanho = null;
+
+                if (!empty($mat['arquivo'])) {
+                    $targetFile = $turmaFolder . '/' . $mat['arquivo'];
+                    file_put_contents($targetFile, $mat['conteudo'] ?? "Mock Content\n");
+                    $caminhoRel = $turmaId . '/' . $mat['arquivo'];
+                    $tamanho = filesize($targetFile);
+                }
+
+                $stmtMaterial->execute([
+                    ':turma_id' => $turmaId,
+                    ':titulo'   => $mat['titulo'],
+                    ':descricao'=> $mat['descricao'] ?? null,
+                    ':tipo'     => $mat['tipo'],
+                    ':caminho'  => $caminhoRel,
+                    ':url'      => $mat['url'] ?? null,
+                    ':tamanho'  => $tamanho,
+                    ':ordem'    => $mat['ordem'] ?? 0,
+                    ':ativo'    => $mat['ativo'] ?? 1,
+                ]);
             }
         }
 

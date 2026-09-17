@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS turmas (
     turno_padrao TEXT NOT NULL DEFAULT 'V',
     status TEXT NOT NULL DEFAULT 'prevista',
     chave_acesso TEXT NOT NULL UNIQUE,
+    portal_certificados_modo TEXT NOT NULL DEFAULT 'nenhum',
     instrutor TEXT NULL,
     cidade TEXT NULL,
     ementa TEXT NULL,
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS materiais_turma (
     url_externa TEXT NULL,
     tamanho_bytes INTEGER NULL,
     ordem INTEGER NOT NULL DEFAULT 0,
+    ativo INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (turma_id) REFERENCES turmas (id) ON DELETE CASCADE

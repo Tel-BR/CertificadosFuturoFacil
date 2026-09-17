@@ -1,0 +1,33 @@
+# =============================================================================
+# Proteção de Diretório e Roteamento Amigável (/turmas)
+# Plataforma Integrada de Gestão Pedagógica e Certificados Futuro Fácil
+# =============================================================================
+
+Options -Indexes
+AddDefaultCharset UTF-8
+
+<IfModule mod_headers.c>
+    Header set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /turmas/
+
+    # Rota de Download Seguro
+    RewriteRule ^download/?$ download.php [L,QSA]
+
+    # Rota de Logout de Alunos
+    RewriteRule ^logout/?$ logout.php [L,QSA]
+
+    # Se a requisição não for arquivo ou diretório físico existente
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    # Rota amigável para slug de turma: /turmas/<slug> -> index.php?turma=$1
+    RewriteRule ^([a-zA-Z0-9_\-]+)/?$ index.php?turma=$1 [L,QSA]
+
+    # Fallback para index.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [L,QSA]
+</IfModule>

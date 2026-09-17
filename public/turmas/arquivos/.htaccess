@@ -1,0 +1,19 @@
+# =============================================================================
+# Blindagem Física contra Download Direto (ADR-0008 / Costura de Teste 2)
+# Plataforma Integrada de Gestão Pedagógica e Certificados Futuro Fácil
+#
+# Qualquer tentativa de requisição HTTP direta a arquivos nesta pasta
+# é sumariamente bloqueada pelo servidor Apache com HTTP 403 Forbidden.
+# O download é permitido exclusivamente via controlador PHP autenticado (download.php).
+# =============================================================================
+
+# Bloqueio de listagem de diretório
+Options -Indexes
+
+# Apache 2.2 legacy directive
+Deny from all
+
+# Apache 2.4+ modern directive
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>

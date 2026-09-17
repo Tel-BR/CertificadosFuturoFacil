@@ -11,6 +11,7 @@ require_once __DIR__ . '/../../src/Services/AuthService.php';
 require_once __DIR__ . '/../../src/Services/CalendarService.php';
 require_once __DIR__ . '/../../src/Services/AttendanceService.php';
 require_once __DIR__ . '/../../src/Services/ExcelSyncService.php';
+require_once __DIR__ . '/../../src/Services/MaterialService.php';
 require_once __DIR__ . '/../../src/Views/layout_admin.php';
 
 use FuturoFacil\Config\Database;
@@ -18,6 +19,7 @@ use FuturoFacil\Services\AuthService;
 use FuturoFacil\Services\CalendarService;
 use FuturoFacil\Services\AttendanceService;
 use FuturoFacil\Services\ExcelSyncService;
+use FuturoFacil\Services\MaterialService;
 use function FuturoFacil\Views\renderAdminLayout;
 
 AuthService::requireAuth();
@@ -25,6 +27,7 @@ AuthService::requireAuth();
 $pdo = Database::getConnection();
 $attendanceService = new AttendanceService($pdo);
 $excelSyncService = new ExcelSyncService($pdo);
+$materialService = new MaterialService($pdo);
 
 $turmaId = isset($_GET['turma_id']) ? (int)$_GET['turma_id'] : (isset($_GET['id']) ? (int)$_GET['id'] : 0);
 
@@ -119,6 +122,125 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
     }
 }
+
+// -------------------------------------------------------------
+// AÇÃO: Atualização da Chave de Acesso da Turma
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_chave') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido. Tente novamente.';
+        $feedbackType = 'danger';
+    } else {
+        try {
+            $novaChave = trim((string)($_POST['nova_chave'] ?? ''));
+            $materialService->updateTurmaChaveAcesso($turmaId, $novaChave);
+            $feedbackMessage = "Chave de Acesso da Turma atualizada com sucesso para '{$novaChave}'.";
+            $feedbackType = 'success';
+            $stmtTurma->execute([$turmaId]);
+            $turma = $stmtTurma->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $feedbackMessage = "Erro ao atualizar chave de acesso: " . $e->getMessage();
+            $feedbackType = 'danger';
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// AÇÃO: Configuração do Modo de Certificados no Portal
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_cert_modo') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido. Tente novamente.';
+        $feedbackType = 'danger';
+    } else {
+        try {
+            $novoModo = trim((string)($_POST['cert_modo'] ?? 'nenhum'));
+            $materialService->updateTurmaCertificadosModo($turmaId, $novoModo);
+            $feedbackMessage = "Modo de exibição de certificados no portal do aluno atualizado com sucesso.";
+            $feedbackType = 'success';
+            $stmtTurma->execute([$turmaId]);
+            $turma = $stmtTurma->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $feedbackMessage = "Erro ao atualizar modo de certificados: " . $e->getMessage();
+            $feedbackType = 'danger';
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// AÇÃO: Cadastro de Novo Material Didático (Upload ou Link)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_material') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido. Tente novamente.';
+        $feedbackType = 'danger';
+    } else {
+        try {
+            $data = [
+                'turma_id'    => $turmaId,
+                'titulo'      => trim((string)($_POST['titulo'] ?? '')),
+                'descricao'   => trim((string)($_POST['descricao'] ?? '')),
+                'tipo'        => trim((string)($_POST['tipo'] ?? 'apostila')),
+                'ordem'       => (int)($_POST['ordem'] ?? 0),
+                'ativo'       => isset($_POST['ativo']) ? 1 : 0,
+                'url_externa' => trim((string)($_POST['url_externa'] ?? '')),
+            ];
+
+            $uploadedFile = isset($_FILES['arquivo_material']) && $_FILES['arquivo_material']['error'] !== UPLOAD_ERR_NO_FILE
+                ? $_FILES['arquivo_material']
+                : null;
+
+            $materialService->createMaterial($data, $uploadedFile);
+            $feedbackMessage = "Material didático '{$data['titulo']}' cadastrado com sucesso no repositório protegido da turma.";
+            $feedbackType = 'success';
+        } catch (Throwable $e) {
+            $feedbackMessage = "Falha ao cadastrar material: " . $e->getMessage();
+            $feedbackType = 'danger';
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// AÇÃO: Alternar Visibilidade do Material (Ativo <=> Oculto)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_material') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido.';
+        $feedbackType = 'danger';
+    } else {
+        $matId = (int)($_POST['material_id'] ?? 0);
+        if ($matId > 0) {
+            $materialService->toggleMaterialStatus($matId);
+            $feedbackMessage = "Visibilidade do material didático alterada com sucesso.";
+            $feedbackType = 'success';
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// AÇÃO: Excluir Material Didático
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_material') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido.';
+        $feedbackType = 'danger';
+    } else {
+        $matId = (int)($_POST['material_id'] ?? 0);
+        if ($matId > 0) {
+            $materialService->deleteMaterial($matId);
+            $feedbackMessage = "Material didático e arquivo físico removidos com sucesso.";
+            $feedbackType = 'success';
+        }
+    }
+}
+
+// Consulta todos os materiais da turma (ativos e ocultos para administração)
+$materiaisTurma = $materialService->getMateriaisByTurma($turmaId, false);
 
 // Consulta encontros da turma
 $stmtEnc = $pdo->prepare("
@@ -423,8 +545,242 @@ ob_start();
             <label>Local / Cidade</label>
             <span><?= htmlspecialchars($turma['cidade'] ?? 'Goiânia - GO', ENT_QUOTES, 'UTF-8') ?></span>
         </div>
+        <div class="meta-item">
+            <label>Chave de Acesso (/turmas)</label>
+            <span style="font-family: monospace; color: var(--primary); font-size: 0.9375rem; font-weight: 700;"><?= htmlspecialchars($turma['chave_acesso'], ENT_QUOTES, 'UTF-8') ?></span>
+        </div>
     </div>
 </div>
+
+<!-- Card de Chave de Acesso e Proteção de Conteúdo da Turma -->
+<div class="sync-actions-card" style="background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%); border-color: #BFDBFE;">
+    <div class="sync-text">
+        <h3 style="color: #1E40AF;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Portal de Conteúdos da Turma (/turmas)
+        </h3>
+        <p style="color: #1D4ED8;">
+            Chave atual: <strong style="font-family: monospace; background: #FFFFFF; padding: 2px 8px; border-radius: 6px; border: 1px solid #BFDBFE;"><?= htmlspecialchars($turma['chave_acesso'], ENT_QUOTES, 'UTF-8') ?></strong>
+            &nbsp;|&nbsp; Modo Certificados: <strong><?= match($turma['portal_certificados_modo'] ?? 'nenhum') {
+                'coordenacao' => 'Entregue à Coordenação',
+                'download_direto' => 'Download por CPF',
+                default => 'Oculto (Nenhum)',
+            } ?></strong>
+        </p>
+    </div>
+    <div class="sync-buttons">
+        <button type="button" class="btn-export-excel" style="background: #25D366; box-shadow: 0 2px 4px rgba(37, 211, 102, 0.25);" onclick="copiarMensagemWhatsappTurma()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span>Copiar Mensagem WhatsApp</span>
+        </button>
+        <button type="button" class="btn-import-trigger" style="color: #1D4ED8; border-color: #93C5FD;" onclick="document.getElementById('configChaveBox').classList.toggle('active');">
+            <span>⚙️ Gerenciar Chave & Certificados</span>
+        </button>
+    </div>
+
+    <!-- Painel Retrátil de Gestão de Chave e Certificados -->
+    <div id="configChaveBox" class="upload-box" style="border-color: #93C5FD;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+            <!-- Form Alterar Chave -->
+            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="action" value="update_chave">
+                <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: var(--dark); margin-bottom: 0.25rem;">
+                    Alterar Chave de Acesso da Turma:
+                </label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" name="nova_chave" value="<?= htmlspecialchars($turma['chave_acesso'], ENT_QUOTES, 'UTF-8') ?>" required style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-family: monospace; font-size: 0.875rem;">
+                    <button type="submit" class="btn-export-excel" style="background: var(--primary);">Salvar</button>
+                </div>
+            </form>
+
+            <!-- Form Modo Certificados -->
+            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="action" value="update_cert_modo">
+                <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: var(--dark); margin-bottom: 0.25rem;">
+                    Aviso de Certificados no Portal do Aluno:
+                </label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <select name="cert_modo" style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+                        <option value="nenhum" <?= ($turma['portal_certificados_modo'] ?? 'nenhum') === 'nenhum' ? 'selected' : '' ?>>Oculto (Nenhum aviso)</option>
+                        <option value="coordenacao" <?= ($turma['portal_certificados_modo'] ?? 'nenhum') === 'coordenacao' ? 'selected' : '' ?>>Entregue à Coordenação (Link Validador)</option>
+                        <option value="download_direto" <?= ($turma['portal_certificados_modo'] ?? 'nenhum') === 'download_direto' ? 'selected' : '' ?>>Download Direto por CPF</option>
+                    </select>
+                    <button type="submit" class="btn-export-excel" style="background: var(--primary);">Atualizar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Tabela de Materiais Didáticos da Turma -->
+<div class="table-container">
+    <div class="table-header-bar">
+        <div class="table-header-title">Materiais Didáticos Protegidos (<?= count($materiaisTurma) ?>)</div>
+        <button type="button" class="btn-import-trigger" style="font-size: 0.75rem; padding: 4px 10px;" onclick="var box = document.getElementById('addMaterialBox'); box.style.display = (box.style.display === 'none' ? 'block' : 'none');">
+            <span>+ Adicionar Material</span>
+        </button>
+    </div>
+
+    <!-- Caixa retrátil para cadastrar novo material -->
+    <div id="addMaterialBox" class="upload-box" style="margin: 1rem 1.5rem; display: none;">
+        <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 1rem;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="action" value="add_material">
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Título do Material *</label>
+                    <input type="text" name="titulo" required placeholder="ex: Apostila Oficial de Excel" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Tipo</label>
+                    <select name="tipo" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+                        <option value="apostila">Apostila (PDF/Doc)</option>
+                        <option value="exercicio">Exercício / Planilha (XLSX/ZIP)</option>
+                        <option value="slide">Slides / Apresentação (PDF/PPTX)</option>
+                        <option value="video">Vídeo (YouTube/Vimeo)</option>
+                        <option value="formulario">Formulário (Google/MS Forms)</option>
+                        <option value="link">Link Externo</option>
+                        <option value="outro">Outro</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Ordem de Exibição</label>
+                    <input type="number" name="ordem" value="0" min="0" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+                </div>
+            </div>
+
+            <div>
+                <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Descrição Curta (Opcional)</label>
+                <input type="text" name="descricao" placeholder="ex: Arquivo com exercícios práticos do encontro 1" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; background: var(--bg); padding: 1rem; border-radius: 8px;">
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Opção A: Upload de Arquivo Protegido (.pdf, .xlsx, .pptx, .zip)</label>
+                    <input type="file" name="arquivo_material" style="font-size: 0.8125rem;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Opção B: Ou URL Externa (YouTube, Forms, Link)</label>
+                    <input type="url" name="url_externa" placeholder="https://..." style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; font-weight: 600; cursor: pointer;">
+                    <input type="checkbox" name="ativo" value="1" checked>
+                    <span>Publicar imediatamente (Visível para Alunos)</span>
+                </label>
+                <button type="submit" class="btn-export-excel" style="background: var(--primary);">
+                    <span>Salvar Material Didático</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 50px;">#</th>
+                <th>Tipo</th>
+                <th>Título / Descrição</th>
+                <th>Arquivo / URL</th>
+                <th>Tamanho</th>
+                <th style="text-align: center;">Visibilidade</th>
+                <th style="text-align: right;">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if (empty($materiaisTurma)): ?>
+                <tr>
+                    <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">
+                        Nenhum material didático cadastrado para esta turma ainda. Clique em "+ Adicionar Material" acima.
+                    </td>
+                </tr>
+            <?php else: ?>
+                <?php foreach ($materiaisTurma as $mat): 
+                    $matId = (int)$mat['id'];
+                    $isAtivo = ((int)$mat['ativo'] === 1);
+                ?>
+                    <tr>
+                        <td style="font-weight: 700; color: var(--text-muted);"><?= (int)$mat['ordem'] ?></td>
+                        <td>
+                            <span class="chip-tag" style="background: var(--paper-2); padding: 2px 6px; border-radius: 4px; font-size: 0.6875rem; font-weight: 700;">
+                                <?= strtoupper($mat['tipo']) ?>
+                            </span>
+                        </td>
+                        <td>
+                            <strong><?= htmlspecialchars($mat['titulo'], ENT_QUOTES, 'UTF-8') ?></strong>
+                            <?php if (!empty($mat['descricao'])): ?>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);"><?= htmlspecialchars($mat['descricao'], ENT_QUOTES, 'UTF-8') ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td style="font-size: 0.8125rem;">
+                            <?php if (!empty($mat['caminho_arquivo'])): ?>
+                                <span style="font-family: monospace; color: var(--primary);"><?= basename($mat['caminho_arquivo']) ?></span>
+                            <?php elseif (!empty($mat['url_externa'])): ?>
+                                <a href="<?= htmlspecialchars($mat['url_externa'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" style="color: var(--primary); text-decoration: underline;">
+                                    <?= htmlspecialchars(substr($mat['url_externa'], 0, 35) . '...', ENT_QUOTES, 'UTF-8') ?>
+                                </a>
+                            <?php endif; ?>
+                        </td>
+                        <td style="font-size: 0.8125rem;"><?= $mat['tamanho_formatado'] ?: '—' ?></td>
+                        <td style="text-align: center;">
+                            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+                                <input type="hidden" name="action" value="toggle_material">
+                                <input type="hidden" name="material_id" value="<?= $matId ?>">
+                                <button type="submit" style="background: none; border: none; cursor: pointer; padding: 0;">
+                                    <?php if ($isAtivo): ?>
+                                        <span class="badge-safe" title="Clique para ocultar dos alunos">✓ Visível</span>
+                                    <?php else: ?>
+                                        <span class="badge-risk" style="background: #E2E8F0; color: #475569;" title="Clique para liberar aos alunos">Oculto</span>
+                                    <?php endif; ?>
+                                </button>
+                            </form>
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <?php if (!empty($mat['caminho_arquivo'])): ?>
+                                <a href="/turmas/download?id=<?= $matId ?>" target="_blank" class="btn-aula-action" style="padding: 3px 8px; font-size: 0.75rem; text-decoration: none;" title="Testar download como administrador">
+                                    <span>Baixar</span>
+                                </a>
+                            <?php endif; ?>
+                            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="display: inline;" onsubmit="return confirm('Deseja realmente excluir este material didático?');">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+                                <input type="hidden" name="action" value="delete_material">
+                                <input type="hidden" name="material_id" value="<?= $matId ?>">
+                                <button type="submit" style="background: none; border: none; color: #DC2626; font-size: 0.75rem; font-weight: 700; cursor: pointer; margin-left: 0.4rem;" title="Excluir material">
+                                    Excluir
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
+</div>
+
+<script>
+function copiarMensagemWhatsappTurma() {
+    var curso = <?= json_encode($turma['curso_nome']) ?>;
+    var chave = <?= json_encode($turma['chave_acesso']) ?>;
+    var link = "https://futurofacil.com.br/turmas?chave=" + encodeURIComponent(chave);
+    var texto = "Olá pessoal! Os materiais didáticos, apostilas e exercícios do nosso curso de *" + curso + "* já estão disponíveis no portal da Futuro Fácil.\n\nAcessem diretamente pelo link com sua chave de acesso:\n" + link;
+    
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(function() {
+            alert("Mensagem copiada com sucesso para a área de transferência!\n\nCole no grupo de WhatsApp da turma.");
+        }).catch(function() {
+            prompt("Copie a mensagem abaixo para o WhatsApp:", texto);
+        });
+    } else {
+        prompt("Copie a mensagem abaixo para o WhatsApp:", texto);
+    }
+}
+</script>
 
 <!-- Card de Sincronização e Download/Upload Excel -->
 <div class="sync-actions-card">
