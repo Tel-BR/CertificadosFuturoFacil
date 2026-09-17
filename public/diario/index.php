@@ -20,6 +20,19 @@ if (!headers_sent()) {
     header('Content-Type: text/html; charset=UTF-8');
 }
 
+// Despacho inteligente para servidor de desenvolvimento (php -S sem mod_rewrite)
+$reqPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '';
+if (preg_match('#^/diario/([a-zA-Z0-9_-]+)/?$#', $reqPath, $matches)) {
+    $targetSlug = $matches[1];
+    if ($targetSlug !== 'index') {
+        $targetFile = __DIR__ . '/' . $targetSlug . '.php';
+        if (file_exists($targetFile)) {
+            require $targetFile;
+            exit;
+        }
+    }
+}
+
 // Exige autenticação estrita
 $user = AuthService::requireAuth();
 
@@ -149,3 +162,4 @@ renderAdminLayout(
     user: $user,
     breadcrumbs: ['Painel' => '/diario', 'Visão Geral' => null]
 );
+
