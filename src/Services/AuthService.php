@@ -272,17 +272,6 @@ class AuthService
         $stmt->execute(['chave' => $chaveAcesso]);
         $turma = $stmt->fetch();
 
-        // Se não encontrou pela chave direta, verifica se a chave bate com o código da turma
-        if (!$turma) {
-            $stmtAlt = $this->pdo->prepare("
-                SELECT * FROM turmas 
-                WHERE LOWER(TRIM(codigo_turma)) = LOWER(:cod)
-                LIMIT 1
-            ");
-            $stmtAlt->execute(['cod' => $chaveAcesso]);
-            $turma = $stmtAlt->fetch();
-        }
-
         if (!$turma) {
             $this->recordStudentFailedAttempt();
             return [

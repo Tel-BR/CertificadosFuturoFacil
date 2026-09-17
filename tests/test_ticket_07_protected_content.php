@@ -450,6 +450,11 @@ try {
     AuthService::logoutStudent();
     assertTest(!AuthService::isStudentAuthenticated(), "logoutStudent() encerra a sessão do aluno com sucesso");
 
+    // O código público da turma identifica a rota, mas não autentica o aluno.
+    $authPorCodigo = $authService->authenticateStudent('TURMA-TEST-01', 'TURMA-TEST-01');
+    assertTest($authPorCodigo['success'] === false, "Código da turma não substitui a Chave de Acesso");
+    assertTest(!AuthService::isStudentAuthenticated(), "Código da turma não cria sessão de aluno");
+
     // Chave de turma cancelada
     $authCancelada = $authService->authenticateStudent('chave-cancelada-xyz');
     assertTest($authCancelada['success'] === false && str_contains($authCancelada['error'] ?? '', 'cancelada'), "authenticateStudent rejeita acesso a turmas canceladas");
