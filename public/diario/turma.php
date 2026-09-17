@@ -12,6 +12,7 @@ require_once __DIR__ . '/../../src/Services/CalendarService.php';
 require_once __DIR__ . '/../../src/Services/AttendanceService.php';
 require_once __DIR__ . '/../../src/Services/ExcelSyncService.php';
 require_once __DIR__ . '/../../src/Services/MaterialService.php';
+require_once __DIR__ . '/../../src/Services/TurmaService.php';
 require_once __DIR__ . '/../../src/Views/layout_admin.php';
 
 use FuturoFacil\Config\Database;
@@ -20,6 +21,7 @@ use FuturoFacil\Services\CalendarService;
 use FuturoFacil\Services\AttendanceService;
 use FuturoFacil\Services\ExcelSyncService;
 use FuturoFacil\Services\MaterialService;
+use FuturoFacil\Services\TurmaService;
 use function FuturoFacil\Views\renderAdminLayout;
 
 AuthService::requireAuth();
@@ -29,12 +31,13 @@ $attendanceService = new AttendanceService($pdo);
 $excelSyncService = new ExcelSyncService($pdo);
 $materialService = new MaterialService($pdo);
 $calendarService = new CalendarService($pdo);
+$turmaService = new TurmaService($pdo, $calendarService);
 
 $turmaId = isset($_GET['turma_id']) ? (int)$_GET['turma_id'] : (isset($_GET['id']) ? (int)$_GET['id'] : 0);
 
 if ($turmaId <= 0) {
     // Se nenhum ID for passado, busca a primeira turma ativa ou redireciona para turmas
-    $stmtFirst = $pdo->query("SELECT id FROM turmas ORDER BY id DESC LIMIT 1");
+    $stmtFirst = $pdo->query("SELECT id FROM turmas WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 1");
     $turmaId = (int)$stmtFirst->fetchColumn();
     if ($turmaId <= 0) {
         header('Location: /diario/turmas');
@@ -313,6 +316,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// -------------------------------------------------------------
+// AÇÕES DA LIXEIRA: Mover para a Lixeira, Restaurar e Expurgo Definitivo
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (in_array($_POST['action'], ['trash', 'restore', 'expunge'], true)) {
+        if (!AuthService::verifyCsrfToken($csrfToken)) {
+            $feedbackMessage = 'Token de segurança CSRF inválido ou expirado.';
+            $feedbackType = 'danger';
+        } elseif ($_POST['action'] === 'trash') {
+            try {
+                $turmaService->moveToTrash($turmaId);
+                $stmtTurma->execute([$turmaId]);
+                $turma = $stmtTurma->fetch(PDO::FETCH_ASSOC);
+                $feedbackMessage = 'Turma movida para a Lixeira com sucesso. Seus horários no calendário foram liberados.';
+                $feedbackType = 'success';
+            } catch (Throwable $e) {
+                $feedbackMessage = 'Falha ao mover turma para a Lixeira: ' . $e->getMessage();
+                $feedbackType = 'danger';
+            }
+        } elseif ($_POST['action'] === 'restore') {
+            try {
+                $res = $turmaService->restoreFromTrash($turmaId);
+                if ($res['success']) {
+                    $stmtTurma->execute([$turmaId]);
+                    $turma = $stmtTurma->fetch(PDO::FETCH_ASSOC);
+                    $feedbackMessage = $res['message'];
+                    $feedbackType = 'success';
+                } else {
+                    $feedbackMessage = $res['message'];
+                    $feedbackType = 'danger';
+                }
+            } catch (Throwable $e) {
+                $feedbackMessage = 'Falha ao restaurar turma: ' . $e->getMessage();
+                $feedbackType = 'danger';
+            }
+        } elseif ($_POST['action'] === 'expunge') {
+            try {
+                $res = $turmaService->expungeTurma($turmaId);
+                if ($res['success']) {
+                    header('Location: /diario/turmas?filtro=lixeira');
+                    exit;
+                } else {
+                    $feedbackMessage = $res['message'];
+                    $feedbackType = 'danger';
+                }
+            } catch (Throwable $e) {
+                $feedbackMessage = 'Falha ao excluir definitivamente: ' . $e->getMessage();
+                $feedbackType = 'danger';
+            }
+        }
+    }
+}
+
 // Consulta todos os materiais da turma (ativos e ocultos para administração)
 $materiaisTurma = $materialService->getMateriaisByTurma($turmaId, false);
 
@@ -339,8 +396,9 @@ $alunos = $stmtAlunos->fetchAll(PDO::FETCH_ASSOC);
 
 $cumulativeFrequencies = $attendanceService->calculateCumulativeFrequencies($turmaId);
 
-$statusClass = 'status-' . ($turma['status'] === 'em_andamento' ? 'andamento' : ($turma['status'] === 'concluida' ? 'concluida' : 'prevista'));
-$statusLabel = ($turma['status'] === 'em_andamento' ? 'Em Andamento' : ($turma['status'] === 'concluida' ? 'Concluída' : 'Prevista'));
+$isTrashed = !empty($turma['deleted_at']);
+$statusClass = $isTrashed ? 'status-lixeira' : ('status-' . ($turma['status'] === 'em_andamento' ? 'andamento' : ($turma['status'] === 'concluida' ? 'concluida' : 'prevista')));
+$statusLabel = $isTrashed ? 'Na Lixeira' : ($turma['status'] === 'em_andamento' ? 'Em Andamento' : ($turma['status'] === 'concluida' ? 'Concluída' : 'Prevista'));
 
 ob_start();
 ?>
@@ -361,6 +419,18 @@ ob_start();
         flex-wrap: wrap;
         gap: 0.5rem;
     }
+    .turma-status-badge {
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .status-andamento { background: #FEF3C7; color: #B45309; }
+    .status-concluida { background: #ECFDF5; color: #065F46; }
+    .status-prevista { background: #E0F2FE; color: #0369A1; }
+    .status-lixeira { background: #FEE2E2; color: #991B1B; }
     .turma-title-lg {
         font-size: 1.625rem;
         font-weight: 800;
@@ -586,13 +656,54 @@ ob_start();
     </div>
 <?php endif; ?>
 
+<?php if ($isTrashed): ?>
+    <div style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.75rem;">🗑️</span>
+            <div>
+                <strong style="color: #991B1B; font-size: 1rem;">Esta turma está na Lixeira</strong>
+                <p style="color: #B91C1C; font-size: 0.8125rem; margin: 0.25rem 0 0 0;">
+                    Descartada em <?= date('d/m/Y \à\s H:i', strtotime($turma['deleted_at'])) ?>. Seus horários e turnos estão desocupados no calendário de capacidade.
+                </p>
+            </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="margin: 0;">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                <input type="hidden" name="action" value="restore">
+                <button type="submit" style="background: #0E7490; color: #FFFFFF; border: none; border-radius: 6px; padding: 0.55rem 0.95rem; font-weight: 700; font-size: 0.8125rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;">
+                    <span>↺ Restaurar Turma</span>
+                </button>
+            </form>
+            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="margin: 0;" onsubmit="return confirm('ATENÇÃO: A exclusão física definitiva é permanente e irreversível. Se esta turma possuir certificados oficiais no Livro de Registros, a exclusão será bloqueada. Confirmar?');">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                <input type="hidden" name="action" value="expunge">
+                <button type="submit" style="background: #DC2626; color: #FFFFFF; border: none; border-radius: 6px; padding: 0.55rem 0.95rem; font-weight: 700; font-size: 0.8125rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;">
+                    <span>✕ Excluir Definitivamente</span>
+                </button>
+            </form>
+        </div>
+    </div>
+<?php endif; ?>
+
 <!-- Cabeçalho da Turma -->
 <div class="turma-detail-header">
     <div class="turma-badge-row">
-        <span class="turma-status-badge <?= $statusClass ?>"><?= $statusLabel ?></span>
-        <span style="font-size: 0.8125rem; color: var(--text-muted); font-weight: 600;">
-            Código: <strong><?= htmlspecialchars($turma['codigo_turma'], ENT_QUOTES, 'UTF-8') ?></strong>
-        </span>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="turma-status-badge <?= $statusClass ?>"><?= $statusLabel ?></span>
+            <span style="font-size: 0.8125rem; color: var(--text-muted); font-weight: 600;">
+                Código: <strong><?= htmlspecialchars($turma['codigo_turma'], ENT_QUOTES, 'UTF-8') ?></strong>
+            </span>
+        </div>
+        <?php if (!$isTrashed): ?>
+            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="margin: 0;" onsubmit="return confirm('Deseja mover esta turma para a Lixeira? Os horários e turnos no calendário serão imediatamente desocupados.');">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                <input type="hidden" name="action" value="trash">
+                <button type="submit" style="background: var(--surface); color: #DC2626; border: 1px solid #FECACA; border-radius: 6px; padding: 0.45rem 0.75rem; font-size: 0.75rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;">
+                    <span>🗑️ Mover para Lixeira</span>
+                </button>
+            </form>
+        <?php endif; ?>
     </div>
     <h1 class="turma-title-lg"><?= htmlspecialchars($turma['curso_nome'], ENT_QUOTES, 'UTF-8') ?></h1>
     <p style="color: var(--text-muted); font-size: 0.9375rem; margin: 0;">
@@ -644,10 +755,10 @@ ob_start();
         </h3>
         <p style="color: #7E22CE;">
             <?php if ($isForaDeGoiania): ?>
-                Treinamento fora de Goiânia em <strong><?= htmlspecialchars($turma['cidade'], ENT_QUOTES, 'UTF-8') ?></strong>.
+                Treinamento fora de Goiânia em <strong><?= htmlspecialchars((string)($turma['cidade'] ?? 'Destino'), ENT_QUOTES, 'UTF-8') ?></strong>.
                 Os blocos de deslocamento logístico (✈) reservam turnos no calendário e previnem conflitos de agenda sem impactar listas de presença nem a carga horária dos certificados.
             <?php else: ?>
-                Turma com realização em <strong><?= htmlspecialchars($turma['cidade'] ?? 'Goiânia - GO', ENT_QUOTES, 'UTF-8') ?></strong>.
+                Turma com realização em <strong><?= htmlspecialchars((string)($turma['cidade'] ?? 'Goiânia - GO'), ENT_QUOTES, 'UTF-8') ?></strong>.
                 Você pode registrar deslocamentos logísticos pontuais ou remarcar todos os encontros em bloco de forma atômica.
             <?php endif; ?>
         </p>

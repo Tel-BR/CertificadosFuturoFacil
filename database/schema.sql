@@ -36,12 +36,14 @@ CREATE TABLE IF NOT EXISTS `turmas` (
     `instrutor` VARCHAR(255) NULL,
     `cidade` VARCHAR(100) NULL,
     `ementa` TEXT NULL,
+    `deleted_at` DATETIME NULL DEFAULT NULL COMMENT 'Timestamp de soft-delete para a Lixeira',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_turmas_status` (`status`),
     INDEX `idx_turmas_datas` (`data_inicio`, `data_conclusao`),
     INDEX `idx_turmas_chave` (`chave_acesso`),
-    INDEX `idx_turmas_os` (`ordem_servico`)
+    INDEX `idx_turmas_os` (`ordem_servico`),
+    INDEX `idx_turmas_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
@@ -60,11 +62,13 @@ CREATE TABLE IF NOT EXISTS `encontros` (
     `conteudo_ministrado` TEXT NULL,
     `tipo` ENUM('aula', 'deslocamento') NOT NULL DEFAULT 'aula' COMMENT 'aula = Encontro pedagógico regular, deslocamento = Bloqueio de viagem logística',
     `abonado` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = Aula abonada coletivamente para todos os alunos',
+    `deleted_at` DATETIME NULL DEFAULT NULL COMMENT 'Timestamp de soft-delete herdado da turma',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT `fk_encontros_turma` FOREIGN KEY (`turma_id`) REFERENCES `turmas` (`id`) ON DELETE CASCADE,
     UNIQUE KEY `uk_turma_encontro` (`turma_id`, `numero_encontro`),
-    INDEX `idx_encontros_data` (`data_encontro`, `turno`)
+    INDEX `idx_encontros_data` (`data_encontro`, `turno`),
+    INDEX `idx_encontros_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------

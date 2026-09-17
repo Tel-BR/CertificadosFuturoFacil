@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS turmas (
     instrutor TEXT NULL,
     cidade TEXT NULL,
     ementa TEXT NULL,
+    deleted_at TEXT NULL DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS encontros (
     conteudo_ministrado TEXT NULL,
     tipo TEXT NOT NULL DEFAULT 'aula',
     abonado INTEGER NOT NULL DEFAULT 0,
+    deleted_at TEXT NULL DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (turma_id) REFERENCES turmas (id) ON DELETE CASCADE,
@@ -163,4 +165,6 @@ CREATE TABLE IF NOT EXISTS bloqueios_agenda (
 
 CREATE INDEX IF NOT EXISTS idx_bloqueios_data ON bloqueios_agenda(data);
 CREATE INDEX IF NOT EXISTS idx_bloqueios_tipo ON bloqueios_agenda(tipo);
+CREATE INDEX IF NOT EXISTS idx_turmas_deleted_at ON turmas(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_encontros_deleted_at ON encontros(deleted_at);
 

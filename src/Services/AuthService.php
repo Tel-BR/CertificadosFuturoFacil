@@ -280,7 +280,14 @@ class AuthService
             ];
         }
 
-        // Bloqueia acesso se a turma estiver cancelada
+        // Bloqueia acesso se a turma estiver na lixeira ou cancelada
+        if (!empty($turma['deleted_at'])) {
+            return [
+                'success' => false,
+                'error'   => 'O acesso aos materiais desta turma foi desativado (turma na lixeira).',
+            ];
+        }
+
         if ($turma['status'] === 'cancelada') {
             return [
                 'success' => false,

@@ -371,6 +371,8 @@ class CalendarService
             INNER JOIN turmas t ON t.id = e.turma_id
             WHERE e.data_encontro BETWEEN :start AND :end
               AND t.status != 'cancelada'
+              AND t.deleted_at IS NULL
+              AND e.deleted_at IS NULL
             ORDER BY e.data_encontro ASC, e.horario_inicio ASC, e.id ASC
         ";
 
@@ -481,6 +483,8 @@ class CalendarService
             INNER JOIN turmas t ON t.id = e.turma_id
             WHERE e.data_encontro = :data
               AND t.status != 'cancelada'
+              AND t.deleted_at IS NULL
+              AND e.deleted_at IS NULL
         ";
 
         $params = [':data' => $date];
@@ -748,6 +752,9 @@ class CalendarService
         if (!$turma) {
             throw new InvalidArgumentException("Turma ID {$turmaId} não encontrada para remarcação.");
         }
+        if (!empty($turma['deleted_at'])) {
+            throw new InvalidArgumentException("Não é permitido remarcar uma turma na Lixeira. Restaure-a primeiro.");
+        }
         if ($turma['status'] === 'cancelada') {
             throw new InvalidArgumentException("Não é permitido remarcar uma turma com status cancelada.");
         }
@@ -873,6 +880,8 @@ class CalendarService
             WHERE e.data_encontro BETWEEN :start AND :end
               AND e.tipo = 'aula'
               AND t.status != 'cancelada'
+              AND t.deleted_at IS NULL
+              AND e.deleted_at IS NULL
         ";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([':start' => $startMonth, ':end' => $endMonth]);
