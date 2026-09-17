@@ -2,3 +2,6 @@
 <FilesMatch "\.(?:db|sqlite|sqlite3)(?:-(?:wal|shm|journal))?$">
     Require all denied
 </FilesMatch>
+<FilesMatch "^(?i:SECRETS)$">
+    Require all denied
+</FilesMatch>

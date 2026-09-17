@@ -8,9 +8,11 @@ declare(strict_types=1);
 $repoDir = dirname(__DIR__);
 $privateDb = $repoDir . '/router_regression.db';
 $publicDb = $repoDir . '/public/router_regression.db';
+$publicSecrets = $repoDir . '/public/SECRETS';
 $protectedMaterial = $repoDir . '/public/turmas/arquivos/router_regression.pdf';
 $failures = [];
 $checks = 0;
+$exitCode = 0;
 
 function assertHttpStatus(string $label, int $actual, int $expected): void
 {
@@ -87,20 +89,27 @@ function runServerCase(string $label, array $arguments, array $protectedPaths, s
 }
 
 try {
+    if (file_exists($publicSecrets)) {
+        throw new RuntimeException('Remova manualmente public/SECRETS antes de executar este teste.');
+    }
     file_put_contents($privateDb, 'fixture privada');
     file_put_contents($publicDb, 'fixture publica');
+    file_put_contents($publicSecrets, 'fixture sem credenciais');
     file_put_contents($protectedMaterial, '%PDF-1.4 fixture');
 
     runServerCase('raiz + router.php', ['router.php'], [
         '/router_regression.db',
+        '/SECRETS',
         '/public/turmas/arquivos/router_regression.pdf',
     ], $repoDir);
     runServerCase('public + router.php', ['-t', 'public', 'router.php'], [
         '/router_regression.db',
+        '/SECRETS',
         '/turmas/arquivos/router_regression.pdf',
     ], $repoDir);
     runServerCase('public + public/router.php', ['-t', 'public', 'public/router.php'], [
         '/router_regression.db',
+        '/SECRETS',
         '/turmas/arquivos/router_regression.pdf',
     ], $repoDir);
 
@@ -114,6 +123,12 @@ try {
         if (!$configured) {
             $failures[] = "$apacheConfig: bloqueio Apache para .db ausente";
         }
+        $secretsDenied = $contents !== false
+            && preg_match('/<FilesMatch\s+"[^"]*SECRETS[^"]*">\s*Require all denied\s*<\/FilesMatch>/s', $contents) === 1;
+        $checks++;
+        if (!$secretsDenied) {
+            $failures[] = "$apacheConfig: bloqueio Apache para SECRETS ausente";
+        }
     }
 
     echo "Ticket 07 HTTP: " . ($checks - count($failures)) . "/$checks verificações passaram.\n";
@@ -121,13 +136,15 @@ try {
         echo "FALHA: $failure\n";
     }
     if ($failures !== []) {
-        exit(1);
+        $exitCode = 1;
     }
 } catch (Throwable $error) {
     fwrite(STDERR, "ERRO: {$error->getMessage()}\n");
-    exit(1);
+    $exitCode = 1;
 } finally {
     @unlink($privateDb);
     @unlink($publicDb);
+    @unlink($publicSecrets);
     @unlink($protectedMaterial);
 }
+exit($exitCode);

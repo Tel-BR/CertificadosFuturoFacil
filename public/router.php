@@ -17,6 +17,7 @@ if (
     || $uri === '/public'
     || str_starts_with($uri, '/public/')
     || $uri === '/router.php'
+    || preg_match('#(?:^|/)SECRETS(?:/|$)#i', $uri)
     || preg_match('#^/turmas/arquivos(?:/|$)#i', $uri)
     || preg_match('#\.(?:db|sqlite|sqlite3)(?:-(?:wal|shm|journal))?(?:/|$)#i', $uri)
 ) {
