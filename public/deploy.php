@@ -171,7 +171,9 @@ if (!empty($sqlDelta) && is_string($sqlDelta)) {
             $pdo->exec($stmtSql);
             $sqlStatementsExecuted++;
         }
-        $pdo->commit();
+        if ($pdo->inTransaction()) {
+            $pdo->commit();
+        }
     } catch (Throwable $e) {
         if (isset($pdo) && $pdo->inTransaction()) {
             $pdo->rollBack();
