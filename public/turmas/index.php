@@ -14,19 +14,33 @@
 
 declare(strict_types=1);
 
+// Cabeçalhos HTTP de Segurança e CSP Estrito (Ticket 07c / ADR-0005)
+if (!headers_sent()) {
+    header("X-Content-Type-Options: nosniff");
+    header("X-Frame-Options: SAMEORIGIN");
+    header("Referrer-Policy: strict-origin-when-cross-origin");
+    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://challenges.cloudflare.com; frame-src 'self' https://www.youtube-nocookie.com https://player.vimeo.com https://docs.google.com https://forms.office.com https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com;");
+}
+
 require_once __DIR__ . '/../../src/Config/Database.php';
 require_once __DIR__ . '/../../src/Services/AuthService.php';
 require_once __DIR__ . '/../../src/Services/MaterialService.php';
+require_once __DIR__ . '/../../src/Services/TurnstileService.php';
 
 use FuturoFacil\Config\Database;
 use FuturoFacil\Services\AuthService;
 use FuturoFacil\Services\MaterialService;
+use FuturoFacil\Services\TurnstileService;
 
 AuthService::startSecureSession();
 
 $pdo = Database::getConnection();
 $authService = new AuthService($pdo);
 $materialService = new MaterialService($pdo);
+$turnstileService = new TurnstileService();
+
+$studentFailedAttempts = (int)($_SESSION['student_failed_attempts'] ?? 0);
+$requiresTurnstile = TurnstileService::isRequiredForStudent($studentFailedAttempts);
 
 $turmaSlug = isset($_GET['turma']) ? trim((string)$_GET['turma']) : null;
 $chaveUrl = isset($_GET['chave']) ? trim((string)$_GET['chave']) : null;
@@ -55,15 +69,26 @@ if (!empty($chaveUrl)) {
 // -------------------------------------------------------------
 $loginError = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'login') {
-    $chaveDigitada = trim((string)($_POST['chave_acesso'] ?? ''));
-    $loginResult = $authService->authenticateStudent($chaveDigitada, $turmaSlug);
+    if ($requiresTurnstile) {
+        $cfToken = $_POST['cf-turnstile-response'] ?? null;
+        if (!$turnstileService->verify($cfToken, $_SERVER['REMOTE_ADDR'] ?? null)) {
+            $loginError = 'Por favor, complete a verificação de segurança (Cloudflare Turnstile) antes de prosseguir.';
+        }
+    }
 
-    if ($loginResult['success']) {
-        $cleanPath = '/turmas' . ($turmaSlug ? '/' . urlencode($turmaSlug) : '');
-        header("Location: {$cleanPath}");
-        exit;
-    } else {
-        $loginError = $loginResult['error'] ?? 'Chave de acesso incorreta.';
+    if (!$loginError) {
+        $chaveDigitada = trim((string)($_POST['chave_acesso'] ?? ''));
+        $loginResult = $authService->authenticateStudent($chaveDigitada, $turmaSlug);
+
+        if ($loginResult['success']) {
+            $cleanPath = '/turmas' . ($turmaSlug ? '/' . urlencode($turmaSlug) : '');
+            header("Location: {$cleanPath}");
+            exit;
+        } else {
+            $loginError = $loginResult['error'] ?? 'Chave de acesso incorreta.';
+            $studentFailedAttempts = (int)($_SESSION['student_failed_attempts'] ?? 0);
+            $requiresTurnstile = TurnstileService::isRequiredForStudent($studentFailedAttempts);
+        }
     }
 }
 
@@ -83,11 +108,14 @@ if ($isAlunoLogado && $alunoData) {
 }
 
 // -------------------------------------------------------------
-// 4. Consulta de Certificado Individual por CPF (se habilitado)
+// 4. Consulta de Certificado Individual por CPF com Desafio de Sobrenome (O1)
 // -------------------------------------------------------------
 $cpfConsultaFeedback = null;
 $certificadoIndividual = null;
+$cpfChallenge = $_SESSION['cpf_challenge'] ?? null;
+
 if ($isAlunoLogado && $turma && ($turma['portal_certificados_modo'] ?? 'nenhum') === 'download_direto') {
+    // Etapa 1: Consulta de CPF
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'consultar_cpf') {
         $cpfDigitado = preg_replace('/\D/', '', (string)($_POST['cpf'] ?? ''));
         if (strlen($cpfDigitado) !== 11) {
@@ -95,7 +123,7 @@ if ($isAlunoLogado && $turma && ($turma['portal_certificados_modo'] ?? 'nenhum')
         } else {
             // Busca certificado no banco
             $stmtCert = $pdo->prepare("
-                SELECT rc.* 
+                SELECT rc.*, a.nome_completo AS aluno_nome_real
                 FROM registros_certificados rc
                 INNER JOIN alunos a ON (a.cpf_limpo = :cpf AND a.turma_id = :turma_id)
                 WHERE rc.turma_id = :turma_id AND (rc.aluno_cpf LIKE :cpf_like OR rc.aluno_nome = a.nome_completo)
@@ -107,19 +135,71 @@ if ($isAlunoLogado && $turma && ($turma['portal_certificados_modo'] ?? 'nenhum')
                 'turma_id'  => $turma['id'],
                 'cpf_like'  => "%" . substr($cpfDigitado, 3, 6) . "%",
             ]);
-            $certificadoIndividual = $stmtCert->fetch(PDO::FETCH_ASSOC);
+            $certEncontrado = $stmtCert->fetch(PDO::FETCH_ASSOC);
 
-            if ($certificadoIndividual) {
+            if ($certEncontrado) {
+                // Gera o desafio de 4 sobrenomes em CAIXA ALTA
+                $alunoNome = $certEncontrado['aluno_nome_real'] ?: $certEncontrado['aluno_nome'];
+                $challenge = $authService->generateSurnameChallenge($alunoNome, (int)$turma['id']);
+
+                $_SESSION['cpf_challenge'] = [
+                    'cpf'             => $cpfDigitado,
+                    'turma_id'        => (int)$turma['id'],
+                    'cert_id'         => (int)$certEncontrado['id'],
+                    'aluno_nome'      => $alunoNome,
+                    'correct_surname' => $challenge['correct'],
+                    'options'         => $challenge['options'], // 4 opções todas em CAIXA ALTA
+                    'created_at'      => time(),
+                ];
+                $cpfChallenge = $_SESSION['cpf_challenge'];
+
                 $cpfConsultaFeedback = [
-                    'tipo' => 'success',
-                    'msg'  => 'Certificado localizado com sucesso! Verifique os dados abaixo ou acesse a validação pública.',
+                    'tipo' => 'info',
+                    'msg'  => 'CPF localizado com sucesso! Por segurança e privacidade (LGPD), confirme o seu sobrenome abaixo para liberar a consulta e o download do certificado:',
                 ];
             } else {
+                unset($_SESSION['cpf_challenge']);
+                $cpfChallenge = null;
                 $cpfConsultaFeedback = [
                     'tipo' => 'warning',
                     'msg'  => 'Nenhum certificado emitido localizado para este CPF nesta turma. Caso sua frequência tenha atingido os 75%, entre em contato com o instrutor.',
                 ];
             }
+        }
+    }
+
+    // Etapa 2: Confirmação do Sobrenome
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'confirmar_sobrenome') {
+        if (!empty($_SESSION['cpf_challenge'])) {
+            $challengeData = $_SESSION['cpf_challenge'];
+            $sobrenomeSelecionado = mb_strtoupper(trim((string)($_POST['sobrenome'] ?? '')), 'UTF-8');
+
+            if (!empty($sobrenomeSelecionado) && hash_equals($challengeData['correct_surname'], $sobrenomeSelecionado)) {
+                // Acerto: Libera o certificado
+                $stmtCert = $pdo->prepare("SELECT * FROM registros_certificados WHERE id = ?");
+                $stmtCert->execute([$challengeData['cert_id']]);
+                $certificadoIndividual = $stmtCert->fetch(PDO::FETCH_ASSOC);
+
+                $_SESSION['certificado_liberado_' . $challengeData['cert_id']] = true;
+                unset($_SESSION['cpf_challenge']);
+                $cpfChallenge = null;
+
+                $cpfConsultaFeedback = [
+                    'tipo' => 'success',
+                    'msg'  => 'Identidade confirmada com sucesso! Seu certificado oficial está liberado para consulta e download.',
+                ];
+            } else {
+                $cpfConsultaFeedback = [
+                    'tipo' => 'danger',
+                    'msg'  => 'Sobrenome incorreto. Por motivos de conformidade à LGPD, selecione exatamente o sobrenome registrado no curso.',
+                ];
+                $cpfChallenge = $_SESSION['cpf_challenge'];
+            }
+        } else {
+            $cpfConsultaFeedback = [
+                'tipo' => 'warning',
+                'msg'  => 'Sessão de validação expirada. Por favor, digite seu CPF novamente.',
+            ];
         }
     }
 }
@@ -147,6 +227,7 @@ $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappMsg}";
 <title><?= $turma ? htmlspecialchars($turma['curso_nome'], ENT_QUOTES, 'UTF-8') . ' · ' : '' ?>Portal de Conteúdos · Futuro Fácil</title>
 <meta name="description" content="Área protegida de materiais didáticos, apostilas, planilhas e conteúdos de turmas da Futuro Fácil." />
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://challenges.cloudflare.com; frame-src 'self' https://www.youtube-nocookie.com https://player.vimeo.com https://docs.google.com https://forms.office.com https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com;" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500&display=swap" rel="stylesheet" />
@@ -739,6 +820,13 @@ $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappMsg}";
                  placeholder="ex: sicoob-excel-2026" required autofocus autocomplete="off">
         </div>
 
+        <?php if ($requiresTurnstile): ?>
+          <div style="margin-bottom: 1.25rem; display: flex; justify-content: center;">
+            <?= $turnstileService->renderWidget('managed') ?>
+          </div>
+          <?= TurnstileService::renderScriptTag() ?>
+        <?php endif; ?>
+
         <button type="submit" class="btn-submit">
           <span>Acessar Conteúdos da Turma</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
@@ -831,23 +919,49 @@ $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappMsg}";
         </div>
       <?php endif; ?>
 
-      <form method="POST" action="/turmas" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-        <input type="hidden" name="action" value="consultar_cpf">
-        <input type="text" name="cpf" placeholder="Digite seu CPF (apenas números)" required style="height: 40px; padding: 0 0.85rem; border: 1.5px solid #86efac; border-radius: 8px; font-size: 0.875rem; font-family: monospace;">
-        <button type="submit" class="btn-cert-action" style="height: 40px; border: none; cursor: pointer;">
-          <span>Consultar Certificado</span>
-        </button>
-      </form>
+      <?php if (!empty($cpfChallenge)): ?>
+        <!-- Etapa 2: Desafio de Sobrenome em CAIXA ALTA (Ticket 07c / O1) -->
+        <form method="POST" action="/turmas" style="background: #ffffff; border: 1.5px solid #86efac; border-radius: 12px; padding: 1.25rem; margin-top: 1rem;">
+          <input type="hidden" name="action" value="confirmar_sobrenome">
+          <p style="font-size: 0.9rem; font-weight: 700; color: #166534; margin: 0 0 0.85rem 0;">
+            Selecione o seu sobrenome oficial cadastrado para liberar o acesso ao certificado:
+          </p>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+            <?php foreach ($cpfChallenge['options'] as $opcao): ?>
+              <label style="display: flex; align-items: center; gap: 0.65rem; background: var(--paper); border: 1.5px solid #86efac; padding: 0.75rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.95rem; text-transform: uppercase;">
+                <input type="radio" name="sobrenome" value="<?= htmlspecialchars($opcao, ENT_QUOTES, 'UTF-8') ?>" required>
+                <span><?= htmlspecialchars($opcao, ENT_QUOTES, 'UTF-8') ?></span>
+              </label>
+            <?php endforeach; ?>
+          </div>
+          <button type="submit" class="btn-cert-action" style="height: 42px; border: none; cursor: pointer;">
+            <span>Confirmar Sobrenome e Liberar Certificado</span>
+          </button>
+        </form>
+      <?php else: ?>
+        <!-- Etapa 1: Consulta de CPF -->
+        <form method="POST" action="/turmas" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+          <input type="hidden" name="action" value="consultar_cpf">
+          <input type="text" name="cpf" placeholder="Digite seu CPF (apenas números)" required style="height: 40px; padding: 0 0.85rem; border: 1.5px solid #86efac; border-radius: 8px; font-size: 0.875rem; font-family: monospace;">
+          <button type="submit" class="btn-cert-action" style="height: 40px; border: none; cursor: pointer;">
+            <span>Consultar Certificado</span>
+          </button>
+        </form>
+      <?php endif; ?>
 
       <?php if ($certificadoIndividual): ?>
-        <div style="background: #ffffff; border: 1px solid #86efac; border-radius: 8px; padding: 1rem; margin-top: 1rem; font-size: 0.85rem;">
-          <div>Aluno(a): <strong><?= htmlspecialchars($certificadoIndividual['aluno_nome'], ENT_QUOTES, 'UTF-8') ?></strong></div>
-          <div>Livro: <strong><?= (int)$certificadoIndividual['livro_numero'] ?></strong> | Folha: <strong><?= (int)$certificadoIndividual['folha_numero'] ?></strong> | Registro: <strong><?= (int)$certificadoIndividual['registro_numero'] ?></strong></div>
+        <div style="background: #ffffff; border: 1px solid #86efac; border-radius: 12px; padding: 1.25rem; margin-top: 1rem; font-size: 0.85rem;">
+          <div style="font-size: 1.05rem; margin-bottom: 0.35rem;">Aluno(a): <strong><?= htmlspecialchars($certificadoIndividual['aluno_nome'], ENT_QUOTES, 'UTF-8') ?></strong></div>
+          <div style="color: var(--ink-soft); margin-bottom: 0.5rem;">Livro: <strong><?= (int)$certificadoIndividual['livro_numero'] ?></strong> | Folha: <strong><?= (int)$certificadoIndividual['folha_numero'] ?></strong> | Registro: <strong><?= (int)$certificadoIndividual['registro_numero'] ?></strong></div>
           <div style="margin-top: 0.5rem;">
             Código de Autenticidade: <code style="font-size: 0.8rem; background: var(--paper-2); padding: 2px 6px; border-radius: 4px;"><?= htmlspecialchars($certificadoIndividual['codigo_autenticidade'], ENT_QUOTES, 'UTF-8') ?></code>
           </div>
-          <div style="margin-top: 0.75rem;">
-            <a href="/validar?validar=<?= htmlspecialchars($certificadoIndividual['codigo_autenticidade'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" style="color: #166534; font-weight: 700; text-decoration: underline;">
+          <div style="margin-top: 1rem; display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <a href="/turmas/download?action=certificado&id=<?= (int)$certificadoIndividual['id'] ?>" class="btn-cert-action" style="background: #166534; display: inline-flex; align-items: center; gap: 0.4rem;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Baixar Certificado em PDF (Duplex)</span>
+            </a>
+            <a href="/validar?validar=<?= htmlspecialchars($certificadoIndividual['codigo_autenticidade'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" style="color: #166534; font-weight: 700; text-decoration: underline; font-size: 0.85rem;">
               → Abrir Validação Pública Oficial deste Certificado
             </a>
           </div>

@@ -60,7 +60,12 @@ if (-not $SkipTests) {
         Write-Error "Suíte de capacidade (Ticket 08) falhou! Deploy abortado."
         exit 1
     }
-    Write-Host "Testes 100% aprovados!" -ForegroundColor Green
+    $testSecRef = & php "$PSScriptRoot\..\tests\test_ticket_07c_security_refinements.php"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Suíte de refinamentos de segurança (Ticket 07c) falhou! Deploy abortado."
+        exit 1
+    }
+    Write-Host "Todas as suítes de testes 100% aprovadas!" -ForegroundColor Green
 }
 
 # 3. Empacotar arquivos

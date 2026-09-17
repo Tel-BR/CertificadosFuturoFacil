@@ -6,6 +6,14 @@
 # Desativa a listagem pública de diretórios
 Options -Indexes
 
+# Força redirecionamento permanente HTTP -> HTTPS 301 (Ticket 07c / ADR-0005)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
 # Bloqueio preventivo a arquivos sensíveis, bancos locais, segredos, scripts e backups
 <FilesMatch "(?i:(^\.|\.(?:db|sqlite|sqlite3|env|ini|log|bak|sql|sh|md|yml|yaml|json)$|SECRETS|credentials\.local\.php))">
     Require all denied

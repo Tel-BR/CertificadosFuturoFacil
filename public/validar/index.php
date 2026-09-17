@@ -9,17 +9,33 @@
 
 declare(strict_types=1);
 
-// Cabeçalhos de Segurança
+// Cabeçalhos de Segurança e CSP com suporte ao Turnstile (Ticket 07c / ADR-0005)
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: SAMEORIGIN");
 header("Referrer-Policy: strict-origin-when-cross-origin");
-header("Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;");
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com;");
 
 require_once __DIR__ . '/../../src/Config/Database.php';
 require_once __DIR__ . '/../../src/Services/ValidatorService.php';
+require_once __DIR__ . '/../../src/Services/AuthService.php';
+require_once __DIR__ . '/../../src/Services/TurnstileService.php';
 
 use FuturoFacil\Config\Database;
 use FuturoFacil\Services\ValidatorService;
+use FuturoFacil\Services\AuthService;
+use FuturoFacil\Services\TurnstileService;
+
+// Rate-limiting estrito: máximo de 30 requisições por minuto por IP (O3 & O4)
+$clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+$authService = new AuthService();
+if (!$authService->checkValidatorRateLimit($clientIp, 30)) {
+    http_response_code(429);
+    header('Retry-After: 60');
+    echo "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='UTF-8'><title>Limite Excedido | Futuro Fácil</title></head><body style='font-family: sans-serif; text-align: center; padding: 4rem 1rem;'><h1>429 - Limite de Consultas Excedido</h1><p>Muitas consultas a partir deste endereço IP. Por favor, aguarde 1 minuto antes de tentar novamente.</p></body></html>";
+    exit;
+}
+
+$turnstileService = new TurnstileService();
 
 // Captura do código enviado
 $rawCode = $_GET['validar'] ?? $_GET['codigo'] ?? $_POST['codigo'] ?? null;
@@ -29,6 +45,10 @@ $service = new ValidatorService();
 $resultado = null;
 
 if (!empty($cleanCode)) {
+    // Se for submissão via POST com Turnstile, verifica o token se fornecido
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cf-turnstile-response'])) {
+        $turnstileService->verify((string)$_POST['cf-turnstile-response'], $clientIp);
+    }
     $resultado = $service->validarCodigo($cleanCode);
 }
 ?>
@@ -436,6 +456,8 @@ if (!empty($cleanCode)) {
                         maxlength="100"
                     >
                 </div>
+                <?= $turnstileService->renderWidget('invisible') ?>
+                <?= TurnstileService::renderScriptTag() ?>
                 <button type="submit" class="btn-submit">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="8"></circle>

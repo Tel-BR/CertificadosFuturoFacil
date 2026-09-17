@@ -608,4 +608,164 @@ class AuthService
             // Silencia erro se campo já foi atualizado ou formato incompatível
         }
     }
+
+    /**
+     * Extrai o sobrenome principal a partir do nome completo.
+     * Retorna o último token significativo em caixa alta.
+     */
+    public static function extractSurname(string $fullName): string
+    {
+        $parts = preg_split('/\s+/', trim($fullName));
+        if (!$parts || empty($parts[0])) {
+            return '';
+        }
+        $last = end($parts);
+        return mb_strtoupper($last, 'UTF-8');
+    }
+
+    /**
+     * Gera o desafio de sobrenome em CAIXA ALTA (1 correto + 3 distratores).
+     *
+     * @param string $correctFullName Nome completo do aluno
+     * @param int|null $turmaId Turma para buscar sobrenomes de outros alunos
+     * @return array{options: string[], correct: string}
+     */
+    public function generateSurnameChallenge(string $correctFullName, ?int $turmaId = null): array
+    {
+        $correctSurname = self::extractSurname($correctFullName);
+
+        $distractorPool = [
+            'SILVA', 'SANTOS', 'OLIVEIRA', 'SOUZA', 'RODRIGUES',
+            'FERREIRA', 'ALVES', 'PEREIRA', 'LIMA', 'GOMES',
+            'COSTA', 'RIBEIRO', 'MARTINS', 'CARVALHO', 'ALMEIDA',
+            'LOPES', 'SOARES', 'FERNANDES', 'VIEIRA', 'BARBOSA',
+            'ROCHA', 'DIAS', 'NASCIMENTO', 'ANDRADE', 'MOREIRA',
+            'NUNES', 'MARQUES', 'MACHADO', 'MENDES', 'FREITAS',
+            'CARDOSO', 'RAMOS', 'GONCALVES', 'SANTANA', 'TEIXEIRA'
+        ];
+
+        // Tenta colher sobrenomes reais de outros alunos no banco
+        try {
+            $stmt = $this->pdo->prepare("SELECT nome_completo FROM alunos WHERE nome_completo != ? LIMIT 30");
+            $stmt->execute([$correctFullName]);
+            $nomes = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+            foreach ($nomes as $n) {
+                $sn = self::extractSurname((string)$n);
+                if (!empty($sn) && !in_array($sn, $distractorPool, true)) {
+                    $distractorPool[] = $sn;
+                }
+            }
+        } catch (\Throwable) {
+            // Usa pool padrão
+        }
+
+        // Filtra para garantir que nenhum distrator seja igual ao correto
+        $filtered = array_values(array_filter(
+            $distractorPool,
+            fn($s) => mb_strtoupper($s, 'UTF-8') !== $correctSurname
+        ));
+
+        shuffle($filtered);
+        $distractors = array_slice($filtered, 0, 3);
+
+        // Garante 4 opções todas em CAIXA ALTA
+        $options = array_map(
+            fn($s) => mb_strtoupper(trim($s), 'UTF-8'),
+            array_merge([$correctSurname], $distractors)
+        );
+
+        shuffle($options);
+
+        return [
+            'options' => $options,
+            'correct' => $correctSurname,
+        ];
+    }
+
+    /**
+     * Valida a resposta do desafio de sobrenome.
+     */
+    public static function verifySurnameChallenge(string $chosenSurname, string $correctFullName): bool
+    {
+        $expected = self::extractSurname($correctFullName);
+        $chosen = mb_strtoupper(trim($chosenSurname), 'UTF-8');
+
+        if (empty($expected) || empty($chosen)) {
+            return false;
+        }
+
+        return hash_equals($expected, $chosen);
+    }
+
+    /**
+     * Rate-limiting do validador público de certificados.
+     * Limita a no máximo 30 consultas por minuto por IP utilizando a tabela tentativas_login.
+     *
+     * @param string $ip Endereço IP do cliente
+     * @param int $maxPerMinute Máximo de requisições por minuto (padrão: 30)
+     * @return bool True se permitido, False se excedeu a cota de rate limit
+     */
+    public function checkValidatorRateLimit(string $ip, int $maxPerMinute = 30): bool
+    {
+        $ip = trim($ip) ?: '127.0.0.1';
+        $username = 'rate_limit_validator';
+        $now = time();
+
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT id, tentativas, updated_at 
+                FROM tentativas_login 
+                WHERE ip_address = :ip AND username = :username 
+                LIMIT 1
+            ");
+            $stmt->execute(['ip' => $ip, 'username' => $username]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if ($row) {
+                $lastUpdated = strtotime((string)$row['updated_at']);
+                $elapsed = $now - $lastUpdated;
+
+                if ($elapsed > 60) {
+                    // Janela de 1 minuto expirou: reinicia contagem
+                    $updateStmt = $this->pdo->prepare("
+                        UPDATE tentativas_login 
+                        SET tentativas = 1, updated_at = :agora 
+                        WHERE id = :id
+                    ");
+                    $updateStmt->execute(['agora' => date('Y-m-d H:i:s', $now), 'id' => $row['id']]);
+                    return true;
+                }
+
+                $tentativas = (int)$row['tentativas'];
+                if ($tentativas >= $maxPerMinute) {
+                    return false;
+                }
+
+                // Incrementa contador dentro da janela
+                $incStmt = $this->pdo->prepare("
+                    UPDATE tentativas_login 
+                    SET tentativas = tentativas + 1, updated_at = :agora 
+                    WHERE id = :id
+                ");
+                $incStmt->execute(['agora' => date('Y-m-d H:i:s', $now), 'id' => $row['id']]);
+                return true;
+            }
+
+            // Primeiro acesso do IP no validador
+            $insertStmt = $this->pdo->prepare("
+                INSERT INTO tentativas_login (ip_address, username, tentativas, ultimo_erro, created_at, updated_at)
+                VALUES (:ip, :username, 1, :agora, :agora, :agora)
+            ");
+            $agoraStr = date('Y-m-d H:i:s', $now);
+            $insertStmt->execute([
+                'ip'       => $ip,
+                'username' => $username,
+                'agora'    => $agoraStr,
+            ]);
+            return true;
+        } catch (\Throwable) {
+            // Em caso de instabilidade na tabela transitória, permite a consulta
+            return true;
+        }
+    }
 }

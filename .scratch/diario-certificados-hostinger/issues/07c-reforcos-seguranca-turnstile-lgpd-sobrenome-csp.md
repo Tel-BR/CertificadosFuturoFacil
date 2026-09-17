@@ -27,12 +27,12 @@ Implementar o pacote de reforços defensivos e conformidade de privacidade aprov
 07b: Auditoria de Segurança OWASP, Blindagem de Perímetro e Testes de Segurança
 08: Gestão Avançada de Capacidade — Deslocamento fora de Goiânia, Feriados Nacionais, Remarcação e Teto de 80h
 
-**Status:** ready
+**Status:** completed
 
-- [ ] O formulário de consulta de certificado no portal `/turmas` exige confirmação com desafio de múltipla escolha com o sobrenome do aluno.
-- [ ] Todas as opções do desafio de sobrenome são exibidas obrigatoriamente em CAIXA ALTA (`mb_strtoupper`).
-- [ ] Tentativas de login com chave de acesso no `/turmas` exigem verificação de Cloudflare Turnstile após 3 falhas na sessão.
-- [ ] Validador público `/validar` inclui Cloudflare Turnstile invisível e trava de rate-limit de 30 consultas por minuto por IP.
-- [ ] Arquivo `public/.htaccess` aplica redirecionamento 301 automático de requisições HTTP inseguras para HTTPS.
-- [ ] O portal do aluno possui cabeçalho CSP autorizando apenas scripts locais e embeds autorizados (YouTube nocookie, Vimeo, Google/MS Forms).
-- [ ] Criada suíte de testes automatizados `tests/test_ticket_09_security_refinements.php` cobrindo todas as novas regras de negócio defensivas.
+- [x] O formulário de consulta de certificado no portal `/turmas` exige confirmação com desafio de múltipla escolha com o sobrenome do aluno.
+- [x] Todas as opções do desafio de sobrenome são exibidas obrigatoriamente em CAIXA ALTA (`mb_strtoupper`).
+- [x] Tentativas de login com chave de acesso no `/turmas` exigem verificação de Cloudflare Turnstile após 3 falhas na sessão.
+- [x] Validador público `/validar` inclui Cloudflare Turnstile invisível e trava de rate-limit de 30 consultas por minuto por IP.
+- [x] Arquivo `public/.htaccess` aplica redirecionamento 301 automático de requisições HTTP inseguras para HTTPS.
+- [x] O portal do aluno possui cabeçalho CSP autorizando apenas scripts locais e embeds autorizados (YouTube nocookie, Vimeo, Google/MS Forms).
+- [x] Criada suíte de testes automatizados `tests/test_ticket_09_security_refinements.php` cobrindo todas as novas regras de negócio defensivas.

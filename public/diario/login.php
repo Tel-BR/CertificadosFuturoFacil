@@ -78,11 +78,11 @@ $csrfToken = AuthService::getCsrfToken();
             --primary-hover: #155E75;
             --primary-light: #ECFEFF;
             --primary-border: #A5F3FC;
-            --dark: #0F172A;
-            --text: #1E293B;
+            --dark: #1B1918;
+            --text: #1B1918;
             --text-muted: #64748B;
-            --border: #E2E8F0;
-            --bg: #F8FAFC;
+            --border: #E2DFDA;
+            --bg: #FAF7F1;
             --surface: #FFFFFF;
             --danger: #DC2626;
             --danger-bg: #FEF2F2;
@@ -90,7 +90,7 @@ $csrfToken = AuthService::getCsrfToken();
             --font-main: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             --radius-md: 10px;
             --radius-lg: 16px;
-            --shadow-card: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+            --shadow-card: 0 4px 14px rgba(27, 25, 24, 0.05);
         }
 
         * {
@@ -125,30 +125,11 @@ $csrfToken = AuthService::getCsrfToken();
             margin-bottom: 2rem;
         }
 
-        .brand-icon {
-            width: 48px;
-            height: 48px;
-            background: linear-gradient(135deg, #0E7490, #0891B2);
-            border-radius: 12px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #FFFFFF;
-            font-weight: 700;
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 4px 12px rgba(14, 116, 144, 0.25);
-        }
-
-        .brand-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--dark);
-            letter-spacing: -0.5px;
-        }
-
-        .brand-title span {
-            color: var(--primary);
+        .login-logo-img {
+            width: 170px;
+            height: 34px;
+            margin-bottom: 0.75rem;
+            display: inline-block;
         }
 
         .brand-subtitle {
@@ -253,8 +234,9 @@ $csrfToken = AuthService::getCsrfToken();
 
 <div class="login-card">
     <div class="login-header">
-        <div class="brand-icon">F</div>
-        <h1 class="brand-title">Futuro<span>Fácil</span></h1>
+        <a href="/diario" title="Futuro Fácil" style="display: inline-block; text-decoration: none;">
+            <img src="/assets/logo.svg" alt="Futuro Fácil" width="180" height="36" class="login-logo-img">
+        </a>
         <p class="brand-subtitle">Acesso ao Painel Pedagógico e Diário</p>
     </div>
 
