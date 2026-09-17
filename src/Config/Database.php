@@ -92,13 +92,40 @@ class Database
     private static function getDefaultConfig(): array
     {
         return [
-            'driver'   => getenv('DB_DRIVER') ?: 'mysql',
-            'host'     => getenv('DB_HOST') ?: '127.0.0.1',
-            'port'     => (int)(getenv('DB_PORT') ?: 3306),
-            'database' => getenv('DB_DATABASE') ?: 'futurofacil_diario',
-            'username' => getenv('DB_USERNAME') ?: 'root',
-            'password' => getenv('DB_PASSWORD') ?: '',
+            'driver'   => self::getEnvVar('DB_DRIVER', 'mysql'),
+            'host'     => self::getEnvVar('DB_HOST', '127.0.0.1'),
+            'port'     => (int)self::getEnvVar('DB_PORT', 3306),
+            'database' => self::getEnvVar('DB_DATABASE', 'futurofacil_diario'),
+            'username' => self::getEnvVar('DB_USERNAME', 'root'),
+            'password' => self::getEnvVar('DB_PASSWORD', ''),
             'charset'  => 'utf8mb4',
         ];
+    }
+
+    private static function getEnvVar(string $name, mixed $default = null): mixed
+    {
+        $val = getenv($name);
+        if ($val !== false && $val !== '') {
+            return $val;
+        }
+        if (!empty($_SERVER[$name])) {
+            return $_SERVER[$name];
+        }
+        if (!empty($_ENV[$name])) {
+            return $_ENV[$name];
+        }
+
+        static $localCredentials = null;
+        if ($localCredentials === null) {
+            $localFile = __DIR__ . '/credentials.local.php';
+            if (file_exists($localFile)) {
+                $loaded = require $localFile;
+                $localCredentials = is_array($loaded) ? $loaded : [];
+            } else {
+                $localCredentials = [];
+            }
+        }
+
+        return $localCredentials[$name] ?? $default;
     }
 }

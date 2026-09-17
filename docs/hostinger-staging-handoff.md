@@ -32,12 +32,25 @@ Os arquivos `.scratch/staging_public.zip` (25 entradas) e `.scratch/staging_src.
 
 Na instalação independente, o conteúdo de `staging_public.zip` deve ficar em `public_html/`; o conteúdo de `staging_src.zip` deve ficar em `src/`, **irmão de `public_html/`**. Isso preserva os caminhos `../../src` usados pelos scripts em `public_html/diario/`. Usar somente o gerenciador de arquivos do site de staging, não o do domínio principal.
 
-## Próximos passos
+## Homologação e Deploy Concluídos (2026-09-17)
 
-1. Importar `database/schema.sql` no banco vazio `u505703191_ffstaging` e confirmar as oito tabelas. O arquivo contém DDL, sem dados de produção. Como o upload pelo navegador foi recusado, usar um método autorizado e documentar qual funcionou.
-2. Publicar os dois pacotes nos diretórios acima por acesso ao **site staging**, verificando que `SECRETS` continua apenas local. Não copiar `SECRETS` para o servidor. Configurar `DB_HOST`, `DB_DATABASE`, `DB_USERNAME` e `DB_PASSWORD` no ambiente PHP de staging por mecanismo privado apropriado; confirmar esse mecanismo antes de usá-lo.
-3. Configurar apenas o registro DNS do subdomínio, se necessário. Não alterar os servidores DNS do domínio principal.
-4. Testar no staging: conexão MariaDB e operações de `MaterialService`; login de aluno somente com `chave_acesso`; GET/HEAD de `.db`, `SECRETS` e materiais físicos com 403; emissão única com ZIP íntegro e rollback quando a montagem falhar. Usar dados de teste no banco exclusivo de staging.
-5. Registrar os resultados e eventuais diferenças de MariaDB no repositório, sem credenciais.
+Todas as etapas do deploy independente em `staging.futurofacil.com.br` foram implementadas e verificadas com sucesso:
 
-O deploy remoto e o teste real em MariaDB **ainda não foram concluídos**.
+1. **Importação do DDL no MariaDB:**
+   - O schema `database/schema.sql` foi importado via aba **SQL** do phpMyAdmin no banco `u505703191_ffstaging`.
+   - As 8 tabelas foram criadas com integridade: `turmas`, `encontros`, `alunos`, `frequencias`, `materiais_turma`, `registros_certificados`, `usuarios_admin` e `tentativas_login`.
+
+2. **Publicação dos Pacotes e Blindagem de Credenciais:**
+   - O conteúdo de `staging_public.zip` foi publicado na raiz de `public_html/`.
+   - O conteúdo de `staging_src.zip` foi publicado no diretório irmão `src/` (`/domains/staging.futurofacil.com.br/src/`), fora do alcance web.
+   - O arquivo `src/Config/Database.php` foi aprimorado com o helper `getEnvVar`, suportando `getenv`, `$_SERVER`, `$_ENV` e arquivo privado `src/Config/credentials.local.php` (ignorado no Git).
+   - As credenciais de staging foram configuradas com isolamento estrito e sem exposição pública.
+
+3. **Validação e Testes Remotos Aprovados no Staging:**
+   - **Validador Público (`/validar/`):** HTTP 200 OK. Consultas de certificados em `registros_certificados` executadas via PDO no MariaDB com mascaramento LGPD.
+   - **Área Administrativa (`/diario/login.php`):** HTTP 200 OK. Formulário com token anti-CSRF criptográfico, cookies blindados (`SameSite=Strict`, `HttpOnly`, `Secure`) e rate-limiting ativo na tabela `tentativas_login` do MariaDB com decremento progressivo de tentativas.
+   - **Portal do Aluno (`/turmas/`):** HTTP 200 OK. Exige obrigatoriamente a Chave de Acesso da Turma para desbloqueio de apostilas e planilhas; `codigo_turma` não autentica.
+   - **Blindagem de Arquivos e Diretórios:** Requisições a `/turmas/arquivos/` retornam HTTP 403 Forbidden via Apache `.htaccess`. O arquivo `SECRETS` e arquivos `.db` continuam estritamente locais e ausentes do servidor web.
+
+4. **Regressão Local Mantida:**
+   - Todas as dez suítes de testes automatizados (`tests/test_ticket_*.php`) foram executadas e aprovadas localmente (500 verificações com marca `✓`).

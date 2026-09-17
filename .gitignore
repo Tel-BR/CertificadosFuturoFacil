@@ -18,6 +18,8 @@ build/
 *.zip
 .streamlit/secrets.toml
 SECRETS
+credentials.local.php
+*.local.php
 public/turmas/arquivos/*
 !public/turmas/arquivos/.htaccess
 !public/turmas/arquivos/.gitkeep
