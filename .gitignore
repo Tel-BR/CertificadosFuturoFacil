@@ -17,6 +17,7 @@ build/
 *.xlsx
 *.zip
 .streamlit/secrets.toml
+SECRETS
 public/turmas/arquivos/*
 !public/turmas/arquivos/.htaccess
 !public/turmas/arquivos/.gitkeep
