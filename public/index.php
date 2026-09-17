@@ -6,29 +6,29 @@
 
 declare(strict_types=1);
 
- = parse_url(['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
+$uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 
 // 1. Favicon
-if ( === '/favicon.ico') {
+if ($uri === '/favicon.ico') {
     http_response_code(204);
     exit;
 }
 
 // 2. Rota de validação pública: /validar ou /validar/<hash>
-if (preg_match('#^/validar(?:/([A-Fa-f0-9]+))?/?$#', , )) {
-    if (!empty([1])) {
-        ['codigo'] = [1];
+if (preg_match('#^/validar(?:/([A-Fa-f0-9]+))?/?$#', $uri, $m)) {
+    if (!empty($m[1])) {
+        $_GET['codigo'] = $m[1];
     }
     require __DIR__ . '/validar/index.php';
     exit;
 }
 
 // 3. Rotas do diário: /diario/<slug>
-if (preg_match('#^/diario(?:/([a-zA-Z0-9_-]+))?/?$#', , )) {
-     = [1] ?? 'index';
-     = __DIR__ . '/diario/' .  . '.php';
-    if (file_exists()) {
-        require ;
+if (preg_match('#^/diario(?:/([a-zA-Z0-9_-]+))?/?$#', $uri, $m)) {
+    $slug = $m[1] ?? 'index';
+    $file = __DIR__ . '/diario/' . $slug . '.php';
+    if (file_exists($file)) {
+        require $file;
         exit;
     }
 }

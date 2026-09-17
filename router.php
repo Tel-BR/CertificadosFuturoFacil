@@ -6,47 +6,47 @@
 
 declare(strict_types=1);
 
- = is_dir(__DIR__ . '/public') ? __DIR__ . '/public' : __DIR__;
- = parse_url(['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
+$publicDir = is_dir(__DIR__ . '/public') ? __DIR__ . '/public' : __DIR__;
+$uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 
 // 1. Arquivo estático real existente dentro de public/
- =  . ;
-if ( !== '/' && file_exists() && !is_dir()) {
+$targetFile = $publicDir . $uri;
+if ($uri !== '/' && file_exists($targetFile) && !is_dir($targetFile)) {
     return false; // Deixa o PHP servir o arquivo estático diretamente
 }
 
 // 2. Favicon silencioso se não existir
-if ( === '/favicon.ico') {
+if ($uri === '/favicon.ico') {
     http_response_code(204);
     exit;
 }
 
 // 3. Raiz / -> Redireciona para /diario/
-if ( === '/' ||  === '') {
+if ($uri === '/' || $uri === '') {
     header('Location: /diario/');
     exit;
 }
 
 // 4. Rota /validar e /validar/<hash>
-if (preg_match('#^/validar(?:/([A-Fa-f0-9]+))?/?$#', , )) {
-    if (!empty([1])) {
-        ['codigo'] = [1];
+if (preg_match('#^/validar(?:/([A-Fa-f0-9]+))?/?$#', $uri, $matches)) {
+    if (!empty($matches[1])) {
+        $_GET['codigo'] = $matches[1];
     }
-    require  . '/validar/index.php';
+    require $publicDir . '/validar/index.php';
     exit;
 }
 
 // 5. Rota /diario ou /diario/
-if ( === '/diario' ||  === '/diario/') {
-    require  . '/diario/index.php';
+if ($uri === '/diario' || $uri === '/diario/') {
+    require $publicDir . '/diario/index.php';
     exit;
 }
 
 // 6. Rotas amigáveis de /diario/<slug> (login, logout, turmas, turma, calendario, aula, fechamento)
-if (preg_match('#^/diario/([a-zA-Z0-9_-]+)/?$#', , )) {
-     =  . '/diario/' . [1] . '.php';
-    if (file_exists()) {
-        require ;
+if (preg_match('#^/diario/([a-zA-Z0-9_-]+)/?$#', $uri, $matches)) {
+    $targetScript = $publicDir . '/diario/' . $matches[1] . '.php';
+    if (file_exists($targetScript)) {
+        require $targetScript;
         exit;
     }
 }
