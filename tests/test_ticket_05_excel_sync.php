@@ -51,6 +51,96 @@ function assertTest(bool $condition, string $description, ?string $detail = null
     }
 }
 
+/** Edita células de uma cópia do arquivo exportado, como uma edição offline no Excel. */
+function editExportedWorkbook(string $xlsxBinary, array $edits): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'ff_excel_edit_');
+    if ($path === false || file_put_contents($path, $xlsxBinary) === false) {
+        throw new RuntimeException('Não foi possível preparar a planilha de teste.');
+    }
+
+    $zip = new ZipArchive();
+    $zipOpen = false;
+    try {
+        if ($zip->open($path) !== true) {
+            throw new RuntimeException('A planilha exportada não é um arquivo OpenXML válido.');
+        }
+        $zipOpen = true;
+        foreach ($edits as $sheetNumber => $cells) {
+            $entry = "xl/worksheets/sheet{$sheetNumber}.xml";
+            $xml = $zip->getFromName($entry);
+            if ($xml === false) {
+                throw new RuntimeException("A aba {$sheetNumber} não existe na planilha.");
+            }
+
+            $document = new DOMDocument();
+            if (!$document->loadXML($xml)) {
+                throw new RuntimeException("XML inválido na aba {$sheetNumber}.");
+            }
+            $xpath = new DOMXPath($document);
+            foreach ($cells as $reference => $value) {
+                if (!preg_match('/^([A-Z]+)([1-9][0-9]*)$/', $reference, $parts)) {
+                    throw new RuntimeException("Referência de célula inválida: {$reference}.");
+                }
+                $matching = $xpath->query('//*[local-name()="c" and @r="' . $reference . '"]');
+                $cell = $matching?->item(0);
+                if (!$cell instanceof DOMElement) {
+                    $rowNumber = $parts[2];
+                    $row = $xpath->query('//*[local-name()="row" and @r="' . $rowNumber . '"]')?->item(0);
+                    if (!$row instanceof DOMElement) {
+                        $sheetData = $xpath->query('//*[local-name()="sheetData"]')?->item(0);
+                        if (!$sheetData instanceof DOMElement) {
+                            throw new RuntimeException("A aba {$sheetNumber} não contém linhas.");
+                        }
+                        $row = $document->createElementNS($sheetData->namespaceURI, 'row');
+                        $row->setAttribute('r', $rowNumber);
+                        $sheetData->appendChild($row);
+                    }
+                    $cell = $document->createElementNS($row->namespaceURI, 'c');
+                    $cell->setAttribute('r', $reference);
+                    $row->appendChild($cell);
+                }
+                while ($cell->firstChild !== null) {
+                    $cell->removeChild($cell->firstChild);
+                }
+                $namespace = $cell->namespaceURI;
+                if (is_int($value)) {
+                    $cell->removeAttribute('t');
+                    $cell->appendChild($document->createElementNS($namespace, 'v', (string)$value));
+                } else {
+                    $cell->setAttribute('t', 'inlineStr');
+                    $inline = $document->createElementNS($namespace, 'is');
+                    $text = $document->createElementNS($namespace, 't');
+                    $text->setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+                    $text->appendChild($document->createTextNode((string)$value));
+                    $inline->appendChild($text);
+                    $cell->appendChild($inline);
+                }
+            }
+            if (!$zip->addFromString($entry, $document->saveXML())) {
+                throw new RuntimeException("Falha ao salvar a aba {$sheetNumber} editada.");
+            }
+        }
+        $closed = $zip->close();
+        $zipOpen = false;
+        if (!$closed) {
+            throw new RuntimeException('Falha ao fechar a planilha editada.');
+        }
+        $binary = file_get_contents($path);
+        if ($binary === false) {
+            throw new RuntimeException('Falha ao ler a planilha editada.');
+        }
+        return $binary;
+    } finally {
+        if ($zipOpen) {
+            $zip->close();
+        }
+        if (file_exists($path)) {
+            unlink($path);
+        }
+    }
+}
+
 try {
     // 1. Inicializa banco SQLite isolado para os testes
     $pdo = new PDO("sqlite:{$testDbPath}", null, null, [
@@ -219,23 +309,16 @@ try {
     // =========================================================================
     echo "\n{$amarelo}-> 2. Testando Sanitização Estrita de Espaços em Branco (conforme Ticket #001)...{$reset}\n";
 
-    // Modifica Aba 1 na matriz simulando espaços acidentais residuais
-    $aba1Sujo = $aba1;
-    $aba1Sujo[1][1] = "   Aluno Sincronizacao 01   "; // Espaços residuais nas pontas
-    $aba1Sujo[1][2] = "  " . $aba1Sujo[1][2] . "   ";
-    $aba1Sujo[2][1] = "  Aluno   Sincronizacao    02  "; // Espaços múltiplos internos e externos
-
-    // Monta planilha com dados sujos e importa
-    $archiveReflection = new ReflectionClass(ExcelSyncService::class);
-    $buildMethod = $archiveReflection->getMethod('buildXlsxArchive');
-    $buildMethod->setAccessible(true);
-    $xlsxSujoBinary = $buildMethod->invoke($syncService, [
-        'Alunos e Chamada' => $aba1Sujo,
-        'Diário e Planos'  => $aba2,
-        'Dados da Turma'   => $aba3,
+    $xlsxSujoBinary = editExportedWorkbook($xlsxBinary, [
+        1 => [
+            'B2' => '   Aluno Sincronizacao 01   ',
+            'C2' => '  ' . $aba1[1][2] . '   ',
+            'B3' => '  Aluno   Sincronizacao    02  ',
+        ],
     ]);
-    
-    // Testa parser com strings com espaços
+    $planilhaSuja = $syncService->parseXlsx($xlsxSujoBinary);
+    assertTest($planilhaSuja['Alunos e Chamada'][1][1] === '   Aluno Sincronizacao 01   ', "Edição offline preserva espaços até a importação");
+
     $resImportSanitize = $syncService->importTurmaSpreadsheet($turmaId, $xlsxSujoBinary);
     assertTest($resImportSanitize['success'] === true, "Importação com sanitização concluída com sucesso");
 
@@ -258,35 +341,25 @@ try {
     // 1. Aluno 01: falta no Encontro 2 (muda de 1 para 0)
     // 2. Aluno 03: falta no Encontro 2 (muda de 1 para 0)
     // 3. Conteúdo ministrado do Encontro 2 atualizado
-    $aba1Modificada = $aba1;
-    $aba1Modificada[1][4] = 0; // Aluno 01: Encontro 2 = 0
-    $aba1Modificada[3][4] = 0; // Aluno 03: Encontro 2 = 0
-
-    $aba2Modificada = $aba2;
     $novoConteudoMin2 = "Aula 2 ministrada offline: Fórmulas Matriciais e Tabelas Dinâmicas avançadas com filtros dinâmicos.";
-    $aba2Modificada[2][8] = $novoConteudoMin2;
-    $aba2Modificada[2][3] = '14:30'; // Novo horário de início
-    $aba2Modificada[2][4] = '18:30'; // Novo horário de término
-
-    $aba3Modificada = $aba3;
-    foreach ($aba3Modificada as &$r) {
-        if (isset($r[0]) && trim((string)$r[0]) === 'Data de Início') {
-            $r[1] = '05/10/2026';
-        } elseif (isset($r[0]) && trim((string)$r[0]) === 'Data de Conclusão') {
-            $r[1] = '28/10/2026';
+    $metadataEdits = [];
+    foreach ($aba3 as $rowIndex => $row) {
+        if (isset($row[0]) && trim((string)$row[0]) === 'Data de Início') {
+            $metadataEdits['B' . ($rowIndex + 1)] = '05/10/2026';
+        } elseif (isset($row[0]) && trim((string)$row[0]) === 'Data de Conclusão') {
+            $metadataEdits['B' . ($rowIndex + 1)] = '28/10/2026';
         }
     }
-    unset($r);
 
-    // Constrói novo binário com as modificações
-    $archiveReflection = new ReflectionClass(ExcelSyncService::class);
-    $buildMethod = $archiveReflection->getMethod('buildXlsxArchive');
-    $buildMethod->setAccessible(true);
-    $xlsxModificadoBytes = $buildMethod->invoke($syncService, [
-        'Alunos e Chamada' => $aba1Modificada,
-        'Diário e Planos'  => $aba2Modificada,
-        'Dados da Turma'   => $aba3Modificada,
+    $xlsxModificadoBytes = editExportedWorkbook($xlsxBinary, [
+        1 => ['E2' => 0, 'E4' => 0],
+        2 => ['I3' => $novoConteudoMin2, 'D3' => '14:30', 'E3' => '18:30'],
+        3 => $metadataEdits,
     ]);
+    $planilhaModificada = $syncService->parseXlsx($xlsxModificadoBytes);
+    assertTest((string)$planilhaModificada['Alunos e Chamada'][1][4] === '0'
+        && $planilhaModificada['Diário e Planos'][2][8] === $novoConteudoMin2,
+        "Edições offline de presença e conteúdo são legíveis pela API pública");
 
     // Primeira reimportação da planilha modificada
     $resImport1 = $syncService->importTurmaSpreadsheet($turmaId, $xlsxModificadoBytes);
@@ -389,38 +462,21 @@ try {
     // - Linha 13: Aluno com CPF matematicamente inválido (111.222.333-00)
     // - Linha 14: Aluno com CPF com tamanho incorreto (123.456)
     $cpfValidoNovo = gerarCpfValido(15);
-    $aba1ComInconformidades = $aba1Modificada;
-    
-    // Aluno válido adicional
-    $aba1ComInconformidades[] = [
-        11,
-        'Aluno Novo Legítimo',
-        ValidatorService::formatCpf($cpfValidoNovo),
-        1, 1, 1, 1,
-        '100,0%'
+    $novosAlunos = [
+        12 => [11, 'Aluno Novo Legítimo', ValidatorService::formatCpf($cpfValidoNovo), 1, 1, 1, 1, '100,0%'],
+        13 => [12, 'Aluno Com Cpf Falso', '111.222.333-00', 1, 0, 1, 1, '75,0%'],
+        14 => [13, 'Aluno Com Cpf Curto', '123.456', 1, 1, 1, 1, '100,0%'],
     ];
-    // Aluno com CPF inválido
-    $aba1ComInconformidades[] = [
-        12,
-        'Aluno Com Cpf Falso',
-        '111.222.333-00', // Inválido pelos dígitos verificadores
-        1, 0, 1, 1,
-        '75,0%'
-    ];
-    // Aluno com CPF curto
-    $aba1ComInconformidades[] = [
-        13,
-        'Aluno Com Cpf Curto',
-        '123.456', // Tamanho inválido
-        1, 1, 1, 1,
-        '100,0%'
-    ];
-
-    $xlsxInconformeBytes = $buildMethod->invoke($syncService, [
-        'Alunos e Chamada' => $aba1ComInconformidades,
-        'Diário e Planos'  => $aba2Modificada,
-        'Dados da Turma'   => $aba3,
-    ]);
+    $newStudentEdits = [];
+    foreach ($novosAlunos as $rowNumber => $values) {
+        foreach ($values as $columnIndex => $value) {
+            $newStudentEdits[chr(65 + $columnIndex) . $rowNumber] = $value;
+        }
+    }
+    $xlsxInconformeBytes = editExportedWorkbook($xlsxModificadoBytes, [1 => $newStudentEdits]);
+    $planilhaInconforme = $syncService->parseXlsx($xlsxInconformeBytes);
+    assertTest(count($planilhaInconforme['Alunos e Chamada']) === 14,
+        "Três linhas editadas offline são legíveis pela API pública");
 
     $resInconforme = $syncService->importTurmaSpreadsheet($turmaId, $xlsxInconformeBytes);
 
