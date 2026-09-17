@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS `alunos` (
     `cpf` VARCHAR(14) NULL COMMENT 'CPF formatado ou conforme fornecido',
     `cpf_limpo` VARCHAR(11) NULL COMMENT 'Apenas os 11 dígitos numéricos',
     `cpf_mascarado` VARCHAR(20) NULL COMMENT 'Formato LGPD: ***.XXX.XXX-**',
+    `justificado` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = Aluno com frequência justificada por deliberação da coordenação',
+    `justificativa_texto` TEXT NULL COMMENT 'Parecer formal ou motivo da justificativa extraordinária',
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT `fk_alunos_turma` FOREIGN KEY (`turma_id`) REFERENCES `turmas` (`id`) ON DELETE CASCADE,

@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS alunos (
     cpf TEXT NULL,
     cpf_limpo TEXT NULL,
     cpf_mascarado TEXT NULL,
+    justificado INTEGER NOT NULL DEFAULT 0,
+    justificativa_texto TEXT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (turma_id) REFERENCES turmas (id) ON DELETE CASCADE

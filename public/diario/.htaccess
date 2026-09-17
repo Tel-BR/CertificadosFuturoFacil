@@ -35,6 +35,9 @@ AddDefaultCharset UTF-8
     # Rota de Detalhes da Turma e Sincronização Excel
     RewriteRule ^turma/?$ turma.php [L,QSA]
 
+    # Rota de Fechamento Assistido e Emissão de Certificados
+    RewriteRule ^fechamento/?$ fechamento.php [L,QSA]
+
     # Se a requisição não for arquivo ou diretório físico existente, envia para index.php
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
