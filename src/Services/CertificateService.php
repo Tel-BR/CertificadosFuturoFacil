@@ -336,6 +336,10 @@ class CertificateService
         $turma = $fechamento['turma'];
         $alunosAptos = $fechamento['alunos_aptos'];
 
+        if ($fechamento['ja_emitida']) {
+            throw new RuntimeException('Esta turma já foi concluída e possui emissão registrada.');
+        }
+
         if (empty($alunosAptos)) {
             throw new RuntimeException("Não há alunos aptos para emissão de certificados nesta turma.");
         }
@@ -347,6 +351,21 @@ class CertificateService
         $this->pdo->beginTransaction();
 
         try {
+            // Reserva a turma sob lock de escrita. Uma segunda requisição espera
+            // esta transação e não consegue gerar outro lote após o COMMIT.
+            $stmtClaim = $this->pdo->prepare("
+                UPDATE turmas
+                SET status = 'concluida', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status NOT IN ('concluida', 'cancelada')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM registros_certificados WHERE turma_id = ?
+                  )
+            ");
+            $stmtClaim->execute([$turmaId, $turmaId]);
+            if ($stmtClaim->rowCount() !== 1) {
+                throw new RuntimeException('Esta turma já foi concluída ou não pode ser emitida novamente.');
+            }
+
             $seq = $this->getNextSequenceNumbers();
             $currLivro = $seq['livro_numero'];
             $currFolha = $seq['folha_numero'];
@@ -444,14 +463,10 @@ class CertificateService
                 }
             }
 
-            // Atualiza status da turma para 'concluida'
-            $stmtUpdateTurma = $this->pdo->prepare("
-                UPDATE turmas
-                SET status = 'concluida', updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            ");
-            $stmtUpdateTurma->execute([$turmaId]);
-
+            // O pacote precisa estar completo antes de confirmar os assentos.
+            // A própria conexão lê os novos registros ainda não comitados para
+            // incluir o Livro de Registro Digital atualizado no ZIP.
+            $zipBinary = $this->buildZipPackage($registrosSalvos, $turma);
             $this->pdo->commit();
         } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -459,9 +474,6 @@ class CertificateService
             }
             throw new RuntimeException("Falha atômica ao emitir certificados: " . $e->getMessage(), 0, $e);
         }
-
-        // GERAÇÃO DOS ARTEFATOS EM MEMÓRIA / ARQUIVO ZIP
-        $zipBinary = $this->buildZipPackage($registrosSalvos, $turma);
 
         $codigoSlug = preg_replace('/[^a-zA-Z0-9_\-]/', '_', (string)$turma['codigo_turma']);
         $zipFilename = "certificados_{$codigoSlug}_" . date('Ymd_His') . ".zip";

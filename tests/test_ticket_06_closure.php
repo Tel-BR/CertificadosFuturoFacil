@@ -20,6 +20,7 @@ use FuturoFacil\Services\AttendanceService;
 use FuturoFacil\Services\CalendarService;
 use FuturoFacil\Services\CertificatePdfService;
 use FuturoFacil\Services\CertificateService;
+use FuturoFacil\Services\AuthService;
 
 $verde = "\033[32m";
 $vermelho = "\033[31m";
@@ -404,6 +405,17 @@ try {
     $zip->close();
     @unlink($zipTempFile);
 
+    // Confirmar novamente a mesma turma não pode criar um segundo lote.
+    $reemissaoBloqueada = false;
+    try {
+        $certificateService->emitirCertificadosTurma($turmaId, ['data_emissao' => '2026-10-28']);
+    } catch (RuntimeException $e) {
+        $reemissaoBloqueada = true;
+    }
+    assertTest($reemissaoBloqueada, "Reemissão da turma concluída é rejeitada");
+    $aposTentativa = $certificateService->getTurmaFechamentoData($turmaId);
+    assertTest($aposTentativa['total_certificados_emitidos'] === 8, "Reenvio não cria assentos duplicados");
+
     // =========================================================================
     // 9. Testando Interface Web e Roteamento Amigável (/diario/fechamento)
     // =========================================================================
@@ -423,6 +435,17 @@ try {
     assertTest(str_contains($fechamentoContent, 'Copiar Descrição para NFS-e'), "Página contém o botão de 1 clique 'Copiar Descrição para NFS-e'");
     assertTest(str_contains($fechamentoContent, 'Confirmar e Emitir Certificados'), "Página contém o botão de emissão 'Confirmar e Emitir Certificados'");
     assertTest(str_contains($fechamentoContent, 'csrf_token'), "Formulários protegidos por token anti-CSRF");
+
+    // A página real deve impedir novo envio quando a turma já foi emitida.
+    Database::setConfig(['driver' => 'sqlite', 'database' => $testDbPath]);
+    $_SESSION[AuthService::SESSION_ADMIN_KEY] = ['id' => 1, 'nome' => 'Operador Teste'];
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    $_GET['turma_id'] = $turmaId;
+    ob_start();
+    require $fechamentoPath;
+    $htmlFechamentoEmitido = ob_get_clean();
+    assertTest(str_contains($htmlFechamentoEmitido, 'Turma já emitida'), "Fechamento informa que a turma já foi emitida");
+    assertTest(preg_match('/<button[^>]*disabled[^>]*>\s*<span>Turma já emitida<\/span>/s', $htmlFechamentoEmitido) === 1, "Botão de emissão fica desabilitado após o fechamento");
 
 } catch (Throwable $e) {
     echo "{$vermelho}ERRO INESPERADO NA SUÍTE DE TESTES: " . $e->getMessage() . "\n";

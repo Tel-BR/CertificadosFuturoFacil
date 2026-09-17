@@ -438,13 +438,16 @@ ob_start();
             </div>
 
             <div class="flex flex-col sm:flex-row items-stretch md:items-center gap-3">
+                <?php if ($dados['ja_emitida']): ?>
+                    <p role="status" class="text-sm font-semibold text-emerald-200">Turma já emitida. A emissão de novos assentos está bloqueada.</p>
+                <?php endif; ?>
                 <form method="POST" onsubmit="return confirm('Deseja realmente formalizar a conclusão da turma e emitir os <?= count($alunosAptos) ?> certificados oficiais no Livro de Registro?');">
                     <input type="hidden" name="csrf_token" value="<?= $csrfToken ?>">
                     <input type="hidden" name="action" value="emitir_certificados">
                     <input type="hidden" name="data_emissao" value="<?= date('Y-m-d') ?>">
 
-                    <button type="submit" <?= empty($alunosAptos) ? 'disabled' : '' ?> class="w-full sm:w-auto py-3 px-6 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-bold text-sm rounded-xl shadow-lg transition flex items-center justify-center gap-2">
-                        <span>🎓 Confirmar e Emitir Certificados</span>
+                    <button type="submit" <?= (empty($alunosAptos) || $dados['ja_emitida']) ? 'disabled' : '' ?> class="w-full sm:w-auto py-3 px-6 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-bold text-sm rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                        <span><?= $dados['ja_emitida'] ? 'Turma já emitida' : '🎓 Confirmar e Emitir Certificados' ?></span>
                     </button>
                 </form>
 
@@ -547,4 +550,4 @@ function closeJustificativaModal() {
 </script>
 <?php
 $content = ob_get_clean();
-echo renderAdminLayout('Fechamento Assistido & Emissão', $content, 'turmas');
+renderAdminLayout('Fechamento Assistido & Emissão', 'turmas', $content);
