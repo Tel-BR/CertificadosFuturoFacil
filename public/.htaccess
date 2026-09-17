@@ -1,7 +1,30 @@
-# Proteção quando public/ é implantado como document root Apache.
-<FilesMatch "\.(?:db|sqlite|sqlite3)(?:-(?:wal|shm|journal))?$">
+# =============================================================================
+# Blindagem de Perímetro e Cabeçalhos de Segurança (Ticket 07b)
+# Plataforma Integrada de Gestão Pedagógica, Diário e Certificados Futuro Fácil
+# =============================================================================
+
+# Desativa a listagem pública de diretórios
+Options -Indexes
+
+# Bloqueio preventivo a arquivos sensíveis, bancos locais, segredos, scripts e backups
+<FilesMatch "(?i:(^\.|\.(?:db|sqlite|sqlite3|env|ini|log|bak|sql|sh|md|yml|yaml|json)$|SECRETS|credentials\.local\.php))">
     Require all denied
 </FilesMatch>
-<FilesMatch "^(?i:SECRETS)$">
-    Require all denied
-</FilesMatch>
+
+# Cabeçalhos HTTP Defensivos Globais (OWASP)
+<IfModule mod_headers.c>
+    # Previne Clickjacking (impedindo embutimento em iframes de domínios externos)
+    Header always set X-Frame-Options "SAMEORIGIN"
+
+    # Previne detecção de MIME-type incorreto (MIME-sniffing)
+    Header always set X-Content-Type-Options "nosniff"
+
+    # Proteção de privacidade no cabeçalho Referer
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Restringe APIs invasivas de dispositivos
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+
+    # Força uso perpétuo de HTTPS com subdomínios (HSTS)
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+</IfModule>

@@ -17,13 +17,21 @@ if (
     || $uri === '/public'
     || str_starts_with($uri, '/public/')
     || $uri === '/router.php'
-    || preg_match('#(?:^|/)SECRETS(?:/|$)#i', $uri)
+    || preg_match('#(?:^|/)(?:SECRETS|credentials\.local\.php|\.env.*)(?:/|$)#i', $uri)
     || preg_match('#^/turmas/arquivos(?:/|$)#i', $uri)
-    || preg_match('#\.(?:db|sqlite|sqlite3)(?:-(?:wal|shm|journal))?(?:/|$)#i', $uri)
+    || preg_match('#\.(?:db|sqlite|sqlite3|ini|log|bak|sql|sh|md|yml|yaml)(?:-(?:wal|shm|journal))?(?:/|$)#i', $uri)
 ) {
     http_response_code(403);
     echo 'Acesso Proibido';
     exit;
+}
+
+// Cabeçalhos HTTP Defensivos Globais (Ticket 07b / OWASP)
+if (!headers_sent()) {
+    header('X-Frame-Options: SAMEORIGIN');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 }
 
 // Arquivos físicos são resolvidos no diretório público, nunca no document root

@@ -1,7 +1,17 @@
+# =============================================================================
 # Proteção quando a raiz do repositório é usada como document root Apache.
-<FilesMatch "\.(?:db|sqlite|sqlite3)(?:-(?:wal|shm|journal))?$">
+# =============================================================================
+
+Options -Indexes
+
+<FilesMatch "(?i:(^\.|\.(?:db|sqlite|sqlite3|env|ini|log|bak|sql|sh|md|yml|yaml|json)$|SECRETS|credentials\.local\.php))">
     Require all denied
 </FilesMatch>
-<FilesMatch "^(?i:SECRETS)$">
-    Require all denied
-</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+</IfModule>
