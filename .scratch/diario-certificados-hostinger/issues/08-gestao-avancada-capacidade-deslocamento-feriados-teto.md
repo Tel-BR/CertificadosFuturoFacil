@@ -11,13 +11,13 @@ Refinar a gestão estratégica de capacidade da agenda da Futuro Fácil para tur
 03: Calendário Anual/Mensal, Rollover de Turnos e Carga de Testes Fictícios
 06: Fechamento Assistido, Emissão de Certificados e Livro de Registro Digital
 
-**Status:** backlog
+**Status:** done
 
-- [ ] O formulário de turmas presenciais disponibiliza opções para ativar bloqueio de deslocamento prévio (ida), posterior (volta) ou ambos, com sugestão automática quando a cidade informada for diferente de Goiânia.
-- [ ] O bloqueio de deslocamento permite selecionar a data e o turno (`M`, `V`, `N`, `D`), permitindo ocupar finais de semana (domingos e sábados) para viabilizar viagens logísticas.
-- [ ] Em turmas híbridas, os encontros presenciais fora de Goiânia recebem o vínculo dos blocos de deslocamento correspondentes.
-- [ ] Os registros de deslocamento são gravados na tabela `encontros` com `tipo = 'deslocamento'`, gerando bloqueio impeditivo de choque de agenda no Calendário com ícone `✈` e texto explicativo no popover, sendo estritamente isolados da lista de chamada do Modo Aula e da carga horária de certificados.
-- [ ] A funcionalidade "Adiar/Remarcar Turma" move em bloco todos os encontros de aula e deslocamentos vinculados para a nova data de início de forma transacional atômica, validando a ausência de choques em todas as novas datas antes de desocupar as datas antigas.
-- [ ] Tabela de feriados nacionais e bloqueios pessoais do instrutor impede agendamentos por padrão, mas permite confirmação explícita de exceção extraordinária consciente.
-- [ ] Feriados em terças e quintas sugerem ponte de feriado (segunda ou sexta) apenas quando o operador tenta agendar aula na data próxima do fim de semana.
-- [ ] Medidor visual de carga horária mensal (ex: `Xh / 80h`) é exibido no topo do calendário mensal e nos cartões anuais, disparando alerta enfático não-bloqueante de sobrecarga de capacidade ao agendar ou adiar turmas para um mês que ultrapasse 80 horas de aula.
+- [x] O formulário de turmas presenciais disponibiliza opções para ativar bloqueio de deslocamento prévio (ida), posterior (volta) ou ambos, com sugestão automática quando a cidade informada for diferente de Goiânia.
+- [x] O bloqueio de deslocamento permite selecionar a data e o turno (`M`, `V`, `N`, `D`), permitindo ocupar finais de semana (domingos e sábados) para viabilizar viagens logísticas.
+- [x] Em turmas híbridas, os encontros presenciais fora de Goiânia recebem o vínculo dos blocos de deslocamento correspondentes.
+- [x] Os registros de deslocamento são gravados na tabela `encontros` com `tipo = 'deslocamento'`, gerando bloqueio impeditivo de choque de agenda no Calendário com ícone `✈` e texto explicativo no popover, sendo estritamente isolados da lista de chamada do Modo Aula e da carga horária de certificados.
+- [x] A funcionalidade "Adiar/Remarcar Turma" move em bloco todos os encontros de aula e deslocamentos vinculados para a nova data de início de forma transacional atômica, validando a ausência de choques em todas as novas datas antes de desocupar as datas antigas.
+- [x] Tabela de feriados nacionais e bloqueios pessoais do instrutor impede agendamentos por padrão, mas permite confirmação explícita de exceção extraordinária consciente.
+- [x] Feriados em terças e quintas sugerem ponte de feriado (segunda ou sexta) apenas quando o operador tenta agendar aula na data próxima do fim de semana.
+- [x] Medidor visual de carga horária mensal (ex: `Xh / 80h`) é exibido no topo do calendário mensal e nos cartões anuais, disparando alerta enfático não-bloqueante de sobrecarga de capacidade ao agendar ou adiar turmas para um mês que ultrapasse 80 horas de aula.

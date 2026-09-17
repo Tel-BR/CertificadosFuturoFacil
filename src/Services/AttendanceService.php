@@ -167,11 +167,11 @@ class AttendanceService
      */
     public function getAttendanceList(int $encontroId): array
     {
-        $stmt = $this->pdo->prepare("SELECT turma_id, numero_encontro FROM encontros WHERE id = ?");
+        $stmt = $this->pdo->prepare("SELECT turma_id, numero_encontro, tipo FROM encontros WHERE id = ?");
         $stmt->execute([$encontroId]);
         $encontro = $stmt->fetch();
 
-        if (!$encontro) {
+        if (!$encontro || ($encontro['tipo'] ?? '') === 'deslocamento') {
             return [];
         }
 
@@ -249,12 +249,16 @@ class AttendanceService
 
         try {
             // 1. Verifica existência do encontro
-            $stmt = $this->pdo->prepare("SELECT id, turma_id FROM encontros WHERE id = ?");
+            $stmt = $this->pdo->prepare("SELECT id, turma_id, tipo FROM encontros WHERE id = ?");
             $stmt->execute([$encontroId]);
             $encontro = $stmt->fetch();
 
             if (!$encontro) {
                 throw new InvalidArgumentException("Encontro ID {$encontroId} não encontrado no banco de dados.");
+            }
+
+            if (($encontro['tipo'] ?? '') === 'deslocamento') {
+                throw new InvalidArgumentException("Encontros de deslocamento logístico não possuem lista de presença no Modo Aula.");
             }
 
             // 2. Atualiza o encontro (conteudo_ministrado e flag abonado se fornecido)

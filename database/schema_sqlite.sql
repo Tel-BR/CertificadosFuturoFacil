@@ -150,3 +150,17 @@ CREATE TABLE IF NOT EXISTS tentativas_login (
 
 CREATE INDEX IF NOT EXISTS idx_tentativas_ip_user ON tentativas_login(ip_address, username);
 
+CREATE TABLE IF NOT EXISTS bloqueios_agenda (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    tipo TEXT NOT NULL DEFAULT 'feriado_nacional',
+    bloqueante INTEGER NOT NULL DEFAULT 1,
+    permite_excecao INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_bloqueios_data ON bloqueios_agenda(data);
+CREATE INDEX IF NOT EXISTS idx_bloqueios_tipo ON bloqueios_agenda(tipo);
+

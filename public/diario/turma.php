@@ -28,6 +28,7 @@ $pdo = Database::getConnection();
 $attendanceService = new AttendanceService($pdo);
 $excelSyncService = new ExcelSyncService($pdo);
 $materialService = new MaterialService($pdo);
+$calendarService = new CalendarService($pdo);
 
 $turmaId = isset($_GET['turma_id']) ? (int)$_GET['turma_id'] : (isset($_GET['id']) ? (int)$_GET['id'] : 0);
 
@@ -235,6 +236,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $materialService->deleteMaterial($matId);
             $feedbackMessage = "Material didático e arquivo físico removidos com sucesso.";
             $feedbackType = 'success';
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// AÇÃO: Adiamento / Remarcação Atômica em Bloco
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'reschedule_turma') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido.';
+        $feedbackType = 'danger';
+    } else {
+        try {
+            $novaDataInicio = trim((string)($_POST['nova_data_inicio'] ?? ''));
+            $permitirExcecao = !empty($_POST['confirmar_excecao_feriado']);
+
+            $res = $calendarService->rescheduleTurma($turmaId, $novaDataInicio, null, $permitirExcecao);
+            $feedbackMessage = "Turma remarcada com sucesso para o período de " . date('d/m/Y', strtotime($res['nova_data_inicio'])) . " a " . date('d/m/Y', strtotime($res['nova_data_conclusao'])) . " ({$res['total_encontros_movidos']} registros atualizados).";
+            $feedbackType = 'success';
+
+            $stmtTurma->execute([$turmaId]);
+            $turma = $stmtTurma->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $feedbackMessage = "Falha ao remarcar turma em bloco: " . $e->getMessage();
+            $feedbackType = 'danger';
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// AÇÃO: Agendamento Manual de Deslocamento Logístico (Viagem)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_deslocamento') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido.';
+        $feedbackType = 'danger';
+    } else {
+        try {
+            $dataDesloc = trim((string)($_POST['data_deslocamento'] ?? ''));
+            $turno = strtoupper(trim((string)($_POST['turno'] ?? 'V')));
+            $direcao = trim((string)($_POST['direcao'] ?? 'ida'));
+            $descricao = trim((string)($_POST['descricao'] ?? ''));
+            $permitirExcecao = !empty($_POST['confirmar_excecao_feriado']);
+
+            $calendarService->scheduleDeslocamento($turmaId, $dataDesloc, $turno, $direcao, $descricao ?: null, $permitirExcecao);
+            $feedbackMessage = "Deslocamento logístico (✈) agendado com sucesso para o dia " . date('d/m/Y', strtotime($dataDesloc)) . " [{$turno}].";
+            $feedbackType = 'success';
+        } catch (Throwable $e) {
+            $feedbackMessage = "Erro ao agendar deslocamento logístico: " . $e->getMessage();
+            $feedbackType = 'danger';
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// AÇÃO: Geração Automática de Deslocamentos (Ida e Volta)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'gerar_deslocamentos_automaticos') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido.';
+        $feedbackType = 'danger';
+    } else {
+        try {
+            $permitirExcecao = !empty($_POST['confirmar_excecao_feriado']);
+            $criados = $calendarService->addDeslocamentosParaTurma($turmaId, true, true, null, null, null, $permitirExcecao);
+            $feedbackMessage = sprintf("Gerados %d blocos de deslocamento logístico (✈) com sucesso para a viagem a %s.", count($criados), $turma['cidade'] ?? 'destino');
+            $feedbackType = 'success';
+        } catch (Throwable $e) {
+            $feedbackMessage = "Falha ao gerar deslocamentos automáticos: " . $e->getMessage();
+            $feedbackType = 'danger';
         }
     }
 }
@@ -543,12 +617,122 @@ ob_start();
         </div>
         <div class="meta-item">
             <label>Local / Cidade</label>
-            <span><?= htmlspecialchars($turma['cidade'] ?? 'Goiânia - GO', ENT_QUOTES, 'UTF-8') ?></span>
+            <span>
+                <?php 
+                $cidadeTurma = trim((string)($turma['cidade'] ?? 'Goiânia - GO'));
+                $isForaDeGoiania = !preg_match('/goi[aâ]nia/i', $cidadeTurma);
+                ?>
+                <?= htmlspecialchars($turma['cidade'] ?? 'Goiânia - GO', ENT_QUOTES, 'UTF-8') ?>
+                <?php if ($isForaDeGoiania): ?>
+                    <span style="background: #EEF2FF; color: #4338CA; font-size: 0.6875rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-left: 4px;">✈ Viagem</span>
+                <?php endif; ?>
+            </span>
         </div>
         <div class="meta-item">
             <label>Chave de Acesso (/turmas)</label>
             <span style="font-family: monospace; color: var(--primary); font-size: 0.9375rem; font-weight: 700;"><?= htmlspecialchars($turma['chave_acesso'], ENT_QUOTES, 'UTF-8') ?></span>
         </div>
+    </div>
+</div>
+
+<!-- Card de Logística e Deslocamento (Viagens fora de Goiânia) & Remarcação em Bloco -->
+<div class="sync-actions-card" style="background: linear-gradient(135deg, #FAF5FF 0%, #F3E8FF 100%); border-color: #E9D5FF;">
+    <div class="sync-text">
+        <h3 style="color: #6B21A8;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+            Logística de Deslocamento & Cronograma da Turma
+        </h3>
+        <p style="color: #7E22CE;">
+            <?php if ($isForaDeGoiania): ?>
+                Treinamento fora de Goiânia em <strong><?= htmlspecialchars($turma['cidade'], ENT_QUOTES, 'UTF-8') ?></strong>.
+                Os blocos de deslocamento logístico (✈) reservam turnos no calendário e previnem conflitos de agenda sem impactar listas de presença nem a carga horária dos certificados.
+            <?php else: ?>
+                Turma com realização em <strong><?= htmlspecialchars($turma['cidade'] ?? 'Goiânia - GO', ENT_QUOTES, 'UTF-8') ?></strong>.
+                Você pode registrar deslocamentos logísticos pontuais ou remarcar todos os encontros em bloco de forma atômica.
+            <?php endif; ?>
+        </p>
+    </div>
+    <div class="sync-buttons">
+        <?php if ($isForaDeGoiania): ?>
+            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="action" value="gerar_deslocamentos_automaticos">
+                <button type="submit" class="btn-export-excel" style="background: #7E22CE;" title="Gerar blocos de deslocamento automático (Ida na véspera e Volta no dia seguinte)">
+                    <span>✈ Gerar Ida & Volta Automáticos</span>
+                </button>
+            </form>
+        <?php endif; ?>
+        <button type="button" class="btn-import-trigger" style="color: #6B21A8; border-color: #D8B4FE;" onclick="document.getElementById('deslocamentoManualBox').classList.toggle('active');">
+            <span>✈ + Agendar Deslocamento</span>
+        </button>
+        <button type="button" class="btn-import-trigger" style="color: #0369A1; border-color: #7DD3FC;" onclick="document.getElementById('remarcarTurmaBox').classList.toggle('active');">
+            <span>🔄 Remarcar em Bloco</span>
+        </button>
+    </div>
+
+    <!-- Painel Retrátil: Agendar Deslocamento Manual -->
+    <div id="deslocamentoManualBox" class="upload-box" style="border-color: #D8B4FE;">
+        <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: flex-end;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="action" value="add_deslocamento">
+            <div>
+                <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Data da Viagem *</label>
+                <input type="date" name="data_deslocamento" required value="<?= $turma['data_inicio'] ?>" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+            </div>
+            <div>
+                <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Turno *</label>
+                <select name="turno" required style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+                    <option value="M">[M] Matutino</option>
+                    <option value="V" selected>[V] Vespertino</option>
+                    <option value="N">[N] Noturno</option>
+                    <option value="D">[D] Dia Todo</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Direção *</label>
+                <select name="direcao" required style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+                    <option value="ida">✈ Ida (Goiânia -> <?= htmlspecialchars($turma['cidade'] ?? 'Destino', ENT_QUOTES, 'UTF-8') ?>)</option>
+                    <option value="volta">✈ Volta (<?= htmlspecialchars($turma['cidade'] ?? 'Destino', ENT_QUOTES, 'UTF-8') ?> -> Goiânia)</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Descrição Opcional</label>
+                <input type="text" name="descricao" placeholder="Ex: Translado rodoviário" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+            </div>
+            <div>
+                <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.775rem; margin-bottom: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" name="confirmar_excecao_feriado" value="1">
+                    <span>Permitir em feriado</span>
+                </label>
+                <button type="submit" class="btn-export-excel" style="background: #7E22CE; width: 100%;">Salvar Deslocamento</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Painel Retrátil: Remarcação Atômica em Bloco -->
+    <div id="remarcarTurmaBox" class="upload-box" style="border-color: #7DD3FC;">
+        <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="action" value="reschedule_turma">
+            <div style="font-size: 0.8125rem; color: #0369A1;">
+                <strong>Atenção:</strong> Esta ação recalcula as datas de todos os encontros e deslocamentos a partir da nova data de início informada abaixo, mantendo os intervalos originais. Se houver choque de horário na nova sequência, a operação será cancelada e revertida integralmente.
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 200px;">
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.25rem;">Nova Data de Início (1º Encontro):</label>
+                    <input type="date" name="nova_data_inicio" required value="<?= $turma['data_inicio'] ?>" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem;">
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem; padding-bottom: 0.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; cursor: pointer;">
+                        <input type="checkbox" name="confirmar_excecao_feriado" value="1">
+                        <span>Permitir se coincidir com feriado</span>
+                    </label>
+                </div>
+                <div>
+                    <button type="submit" class="btn-export-excel" style="background: #0284C7;">Confirmar Remarcação em Bloco</button>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -845,20 +1029,35 @@ function copiarMensagemWhatsappTurma() {
         <tbody>
             <?php foreach ($encontros as $enc): 
                 $encId = (int)$enc['id'];
+                $isDeslocamento = (($enc['tipo'] ?? 'aula') === 'deslocamento');
                 $temChamada = ((int)$enc['total_freq'] > 0);
                 $isAbonado = ((int)$enc['abonado'] === 1);
             ?>
-                <tr>
-                    <td style="font-weight: 700;">#<?= (int)$enc['numero_encontro'] ?></td>
+                <tr style="<?= $isDeslocamento ? 'background: #FAF5FF;' : '' ?>">
+                    <td style="font-weight: 700;">
+                        <?= $isDeslocamento ? '✈ #' . (int)$enc['numero_encontro'] : '#' . (int)$enc['numero_encontro'] ?>
+                    </td>
                     <td><?= date('d/m/Y', strtotime($enc['data_encontro'])) ?></td>
                     <td>
                         <strong>[<?= htmlspecialchars($enc['turno'], ENT_QUOTES, 'UTF-8') ?>]</strong>
-                        <?= substr((string)$enc['horario_inicio'], 0, 5) ?> - <?= substr((string)$enc['horario_fim'], 0, 5) ?>
+                        <?php if ($isDeslocamento): ?>
+                            <span style="color: #6B21A8; font-weight: 600; font-size: 0.8125rem;">✈ Deslocamento Logístico</span>
+                        <?php else: ?>
+                            <?= substr((string)$enc['horario_inicio'], 0, 5) ?> - <?= substr((string)$enc['horario_fim'], 0, 5) ?>
+                        <?php endif; ?>
                     </td>
                     <td><?= htmlspecialchars($enc['conteudo_previsto'] ?? '—', ENT_QUOTES, 'UTF-8') ?></td>
-                    <td><?= htmlspecialchars($enc['conteudo_ministrado'] ?? '—', ENT_QUOTES, 'UTF-8') ?></td>
                     <td>
-                        <?php if ($isAbonado): ?>
+                        <?php if ($isDeslocamento): ?>
+                            <span style="color: var(--text-muted); font-size: 0.775rem; font-style: italic;">Não computa horas de certificado</span>
+                        <?php else: ?>
+                            <?= htmlspecialchars($enc['conteudo_ministrado'] ?? '—', ENT_QUOTES, 'UTF-8') ?>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php if ($isDeslocamento): ?>
+                            <span class="badge-safe" style="background: #EEF2FF; color: #4338CA;">✈ Logística</span>
+                        <?php elseif ($isAbonado): ?>
                             <span class="turma-status-badge status-prevista">Abonado</span>
                         <?php elseif ($temChamada): ?>
                             <span class="badge-safe">✓ Realizada</span>
@@ -867,9 +1066,13 @@ function copiarMensagemWhatsappTurma() {
                         <?php endif; ?>
                     </td>
                     <td style="text-align: right;">
-                        <a href="/diario/aula?encontro_id=<?= $encId ?>" class="btn-aula-action" style="padding: 4px 8px; font-size: 0.75rem;">
-                            <span>Modo Aula</span>
-                        </a>
+                        <?php if (!$isDeslocamento): ?>
+                            <a href="/diario/aula?encontro_id=<?= $encId ?>" class="btn-aula-action" style="padding: 4px 8px; font-size: 0.75rem;">
+                                <span>Modo Aula</span>
+                            </a>
+                        <?php else: ?>
+                            <span style="color: var(--text-muted); font-size: 0.75rem; font-weight: 600;">Sem chamada</span>
+                        <?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>

@@ -46,6 +46,7 @@ if ($requestMethod === 'POST') {
         $feedbackError = "Sessão expirada ou token de segurança inválido. Atualize a página e tente novamente.";
     } else {
         $acao = $_POST['acao'] ?? '';
+        $confirmarExcecao = !empty($_POST['confirmar_excecao_feriado']);
 
         if ($acao === 'agendar_encontro') {
             $turmaId = (int)($_POST['turma_id'] ?? 0);
@@ -62,13 +63,14 @@ if ($requestMethod === 'POST') {
                 $proxNumero = (int)$stmtNum->fetchColumn();
 
                 $calendarService->scheduleEncontro([
-                    'turma_id'          => $turmaId,
-                    'numero_encontro'   => $proxNumero,
-                    'data_encontro'     => $dataEncontro,
-                    'turno'             => $turno,
-                    'horario_inicio'    => $hIni ?: null,
-                    'horario_fim'       => $hFim ?: null,
-                    'conteudo_previsto' => $conteudo ?: null,
+                    'turma_id'                  => $turmaId,
+                    'numero_encontro'           => $proxNumero,
+                    'data_encontro'             => $dataEncontro,
+                    'turno'                     => $turno,
+                    'horario_inicio'            => $hIni ?: null,
+                    'horario_fim'               => $hFim ?: null,
+                    'conteudo_previsto'         => $conteudo ?: null,
+                    'confirmar_excecao_feriado' => $confirmarExcecao,
                 ]);
 
                 $feedbackSuccess = "Aula/reposição agendada com sucesso para o dia " . date('d/m/Y', strtotime($dataEncontro)) . " no turno [{$turno}].";
@@ -77,9 +79,73 @@ if ($requestMethod === 'POST') {
             } catch (Throwable $e) {
                 $feedbackError = "Erro inesperado ao registrar agendamento: " . $e->getMessage();
             }
+        } elseif ($acao === 'agendar_deslocamento') {
+            $turmaId = (int)($_POST['turma_id'] ?? 0);
+            $dataEncontro = trim((string)($_POST['data_encontro'] ?? ''));
+            $turno = strtoupper(trim((string)($_POST['turno'] ?? 'V')));
+            $direcao = trim((string)($_POST['direcao'] ?? 'ida'));
+            $descricao = trim((string)($_POST['descricao'] ?? ''));
+
+            try {
+                $calendarService->scheduleDeslocamento(
+                    $turmaId,
+                    $dataEncontro,
+                    $turno,
+                    $direcao,
+                    $descricao ?: null,
+                    $confirmarExcecao
+                );
+
+                $feedbackSuccess = "Deslocamento logístico (✈) agendado com sucesso para o dia " . date('d/m/Y', strtotime($dataEncontro)) . " no turno [{$turno}].";
+            } catch (InvalidArgumentException $e) {
+                $feedbackError = $e->getMessage();
+            } catch (Throwable $e) {
+                $feedbackError = "Falha ao registrar deslocamento logístico: " . $e->getMessage();
+            }
+        } elseif ($acao === 'remarcar_turma') {
+            $turmaId = (int)($_POST['turma_id'] ?? 0);
+            $novaDataInicio = trim((string)($_POST['nova_data_inicio'] ?? ''));
+
+            try {
+                $res = $calendarService->rescheduleTurma(
+                    $turmaId,
+                    $novaDataInicio,
+                    null,
+                    $confirmarExcecao
+                );
+
+                $feedbackSuccess = "Turma remarcada em bloco com sucesso! Novo período: " . date('d/m/Y', strtotime($res['nova_data_inicio'])) . " a " . date('d/m/Y', strtotime($res['nova_data_conclusao'])) . " ({$res['total_encontros_movidos']} encontros/deslocamentos transferidos sem colisões).";
+            } catch (InvalidArgumentException $e) {
+                $feedbackError = $e->getMessage();
+            } catch (Throwable $e) {
+                $feedbackError = "Falha ao remarcar turma: " . $e->getMessage();
+            }
+        } elseif ($acao === 'adicionar_bloqueio') {
+            $dataBloqueio = trim((string)($_POST['data_bloqueio'] ?? ''));
+            $descricao = trim((string)($_POST['descricao'] ?? ''));
+            $tipo = trim((string)($_POST['tipo'] ?? 'bloqueio_pessoal'));
+            $bloqueante = !empty($_POST['bloqueante']);
+            $permiteExcecao = !empty($_POST['permite_excecao']);
+
+            try {
+                $calendarService->addBloqueio(
+                    $dataBloqueio,
+                    $descricao,
+                    $tipo,
+                    $bloqueante,
+                    $permiteExcecao
+                );
+
+                $feedbackSuccess = "Bloqueio de agenda registrado com sucesso para " . date('d/m/Y', strtotime($dataBloqueio)) . ".";
+            } catch (InvalidArgumentException $e) {
+                $feedbackError = $e->getMessage();
+            } catch (Throwable $e) {
+                $feedbackError = "Falha ao registrar bloqueio de agenda: " . $e->getMessage();
+            }
         } elseif ($acao === 'agendar_nova_turma') {
             $cursoNome = trim((string)($_POST['curso_nome'] ?? ''));
             $clienteNome = trim((string)($_POST['cliente_nome'] ?? ''));
+            $cidade = trim((string)($_POST['cidade'] ?? 'Goiânia - GO'));
             $dataEncontro = trim((string)($_POST['data_encontro'] ?? ''));
             $turno = strtoupper(trim((string)($_POST['turno'] ?? 'V')));
             $cargaHoraria = (int)($_POST['carga_horaria'] ?? 8);
@@ -92,8 +158,8 @@ if ($requestMethod === 'POST') {
                 $feedbackError = "O nome do curso e a data são campos obrigatórios.";
             } else {
                 try {
-                    // Validação prévia de choque de horário (Costura de Teste 5)
-                    $conflito = $calendarService->checkConflict($dataEncontro, $turno);
+                    // Validação prévia de choque de horário (Costura de Teste 5 e Feriados)
+                    $conflito = $calendarService->checkConflict($dataEncontro, $turno, null, null, $confirmarExcecao);
                     if ($conflito !== null) {
                         throw new InvalidArgumentException($conflito['mensagem']);
                     }
@@ -105,10 +171,10 @@ if ($requestMethod === 'POST') {
 
                     $stmtNovaTurma = $pdo->prepare("
                         INSERT INTO turmas (
-                            codigo_turma, curso_nome, cliente_nome, carga_horaria,
+                            codigo_turma, curso_nome, cliente_nome, cidade, carga_horaria,
                             data_inicio, data_conclusao, turno_padrao, status, chave_acesso, modalidade
                         ) VALUES (
-                            :codigo, :curso, :cliente, :carga,
+                            :codigo, :curso, :cliente, :cidade, :carga,
                             :data_inicio, :data_conclusao, :turno, 'prevista', :chave, :modalidade
                         )
                     ");
@@ -117,6 +183,7 @@ if ($requestMethod === 'POST') {
                         ':codigo'         => $codigoTurma,
                         ':curso'          => $cursoNome,
                         ':cliente'        => $clienteNome ?: null,
+                        ':cidade'         => $cidade ?: 'Goiânia - GO',
                         ':carga'          => $cargaHoraria,
                         ':data_inicio'    => $dataEncontro,
                         ':data_conclusao' => $dataEncontro,
@@ -128,13 +195,14 @@ if ($requestMethod === 'POST') {
                     $turmaId = (int)$pdo->lastInsertId();
 
                     $calendarService->scheduleEncontro([
-                        'turma_id'          => $turmaId,
-                        'numero_encontro'   => 1,
-                        'data_encontro'     => $dataEncontro,
-                        'turno'             => $turno,
-                        'horario_inicio'    => $hIni ?: null,
-                        'horario_fim'       => $hFim ?: null,
-                        'conteudo_previsto' => $conteudo ?: null,
+                        'turma_id'                  => $turmaId,
+                        'numero_encontro'           => 1,
+                        'data_encontro'             => $dataEncontro,
+                        'turno'                     => $turno,
+                        'horario_inicio'            => $hIni ?: null,
+                        'horario_fim'               => $hFim ?: null,
+                        'conteudo_previsto'         => $conteudo ?: null,
+                        'confirmar_excecao_feriado' => $confirmarExcecao,
                     ]);
 
                     $pdo->commit();
@@ -170,6 +238,9 @@ if ($mes > 12) {
 if ($ano < 2020 || $ano > 2035) {
     $ano = (int)date('Y');
 }
+
+// Semeia feriados nacionais oficiais para o ano em exibição
+$calendarService->seedFeriadosNacionais($ano);
 
 $turnosConfig = CalendarService::getTurnosConfig();
 
@@ -873,8 +944,53 @@ ob_start();
 
     <?php if ($view === 'mensal'): ?>
         <!-- ===================================================================
-             VISÃO MENSAL DETALHADA
+             VISÃO MENSAL DETALHADA & MEDIDOR DE CAPACIDADE (TETO 80H)
              =================================================================== -->
+        <?php 
+        $workload = $calendarData['workload'] ?? [
+            'total_horas' => 0, 'teto_horas' => 80.0, 'porcentagem' => 0, 'is_sobrecarga' => false, 'saldo_horas' => 80.0, 'total_encontros' => 0, 'total_deslocamentos' => 0
+        ];
+        $pct = min(100, (float)$workload['porcentagem']);
+        $barColor = $workload['is_sobrecarga'] ? '#DC2626' : ((float)$workload['porcentagem'] >= 75 ? '#D97706' : '#0E7490');
+        ?>
+
+        <?php if ($workload['is_sobrecarga']): ?>
+            <div class="alert-box alert-danger" style="background: #FEF2F2; border: 1.5px solid #F87171; color: #991B1B; margin-bottom: 1.25rem;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <div>
+                    <div style="font-weight: 800; font-size: 0.95rem; margin-bottom: 0.25rem;">
+                        ⚠️ ALERTA SEVERO DE SOBRECARGA — TETO DE 80H MENSAIS EXCEDIDO
+                    </div>
+                    <p style="margin: 0; font-size: 0.875rem; line-height: 1.4;">
+                        A carga horária acumulada para <strong><?= $calendarData['nome_mes'] ?>/<?= $ano ?></strong> atingiu <strong><?= $workload['total_horas'] ?>h</strong>, superando o teto operacional estipulado em <strong><?= abs($workload['saldo_horas']) ?>h</strong> (<?= $workload['porcentagem'] ?>% da capacidade). 
+                        Este aviso tem caráter <strong>preventivo e não-bloqueante</strong>, permitindo agendamentos adicionais caso indispensável, mas recomenda-se redistribuir as turmas para garantir a qualidade de entrega e evitar estafa.
+                    </p>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <!-- Card Medidor de Capacidade Mensal -->
+        <div class="capacity-meter-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem 1.25rem; margin-bottom: 1.25rem; box-shadow: var(--shadow-sm);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.6rem;">
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; background: <?= $workload['is_sobrecarga'] ? '#FEE2E2' : '#ECFEFF' ?>; color: <?= $workload['is_sobrecarga'] ? '#DC2626' : 'var(--primary)' ?>; font-weight: 700;">⏱️</span>
+                    <span style="font-weight: 700; color: var(--dark); font-size: 0.9375rem;">Capacidade Pedagógica Mensal:</span>
+                    <strong style="font-size: 1.1rem; color: <?= $workload['is_sobrecarga'] ? '#DC2626' : 'var(--primary)' ?>; font-family: var(--font-mono);"><?= $workload['total_horas'] ?>h / 80h</strong>
+                    <span style="font-size: 0.8125rem; font-weight: 600; color: var(--text-muted);">(<?= $workload['porcentagem'] ?>% alocado)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem; font-size: 0.8125rem; color: var(--text-muted);">
+                    <span>Saldo Livre: <strong style="color: <?= $workload['saldo_horas'] < 0 ? '#DC2626' : '#16A34A' ?>;"><?= $workload['saldo_horas'] ?>h</strong></span>
+                    <span>•</span>
+                    <span>Aulas: <strong><?= $workload['total_encontros'] ?></strong></span>
+                    <span>•</span>
+                    <span>Deslocamentos: <strong><?= $workload['total_deslocamentos'] ?> ✈</strong></span>
+                </div>
+            </div>
+            <div style="background: #E2E8F0; border-radius: 999px; height: 10px; overflow: hidden; position: relative;">
+                <div style="background: <?= $barColor ?>; width: <?= $pct ?>%; height: 100%; border-radius: 999px; transition: width 0.3s ease;"></div>
+            </div>
+        </div>
+
         <div class="cal-month-grid">
             <div class="cal-weekdays-header">
                 <?php foreach ($calendarData['dias_semana_abrv'] as $dNome): ?>
@@ -896,6 +1012,9 @@ ob_start();
                         if ($dia['is_today']) {
                             $dayClasses[] = 'day-today';
                         }
+                        if (!empty($dia['bloqueio'])) {
+                            $dayClasses[] = 'day-bloqueio';
+                        }
                         $popoverJson = !empty($dia['popover']) ? htmlspecialchars(json_encode($dia['popover']), ENT_QUOTES, 'UTF-8') : '';
                         ?>
                         <div class="<?= implode(' ', $dayClasses) ?>"
@@ -910,15 +1029,38 @@ ob_start();
                                 <?php endif; ?>
                             </div>
 
-                            <!-- Lista de Chips de Encontros (se houver) -->
+                            <!-- Indicação de Feriado Nacional / Bloqueio / Sugestão de Ponte -->
+                            <?php if (!empty($dia['bloqueio'])): ?>
+                                <div class="bloqueio-chip" style="background: <?= $dia['bloqueio']['tipo'] === 'feriado_nacional' ? '#FEF3C7' : '#F1F5F9' ?>; color: <?= $dia['bloqueio']['tipo'] === 'feriado_nacional' ? '#92400E' : '#334155' ?>; border: 1px solid <?= $dia['bloqueio']['tipo'] === 'feriado_nacional' ? '#FDE68A' : '#CBD5E1' ?>; font-size: 0.65rem; font-weight: 700; padding: 2px 5px; border-radius: 4px; margin-bottom: 3px; display: flex; align-items: center; gap: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($dia['bloqueio']['descricao'], ENT_QUOTES, 'UTF-8') ?>">
+                                    <span><?= $dia['bloqueio']['tipo'] === 'feriado_nacional' ? '🇧🇷' : '🔒' ?></span>
+                                    <span style="overflow: hidden; text-overflow: ellipsis;"><?= htmlspecialchars($dia['bloqueio']['descricao'], ENT_QUOTES, 'UTF-8') ?></span>
+                                </div>
+                            <?php elseif (!empty($dia['ponte'])): ?>
+                                <div class="ponte-chip" style="background: #F0FDF4; color: #166534; border: 1px dashed #86EFAC; font-size: 0.625rem; font-weight: 600; padding: 1px 4px; border-radius: 4px; margin-bottom: 3px; display: flex; align-items: center; gap: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= htmlspecialchars($dia['ponte']['sugestao'], ENT_QUOTES, 'UTF-8') ?>">
+                                    <span>🏖️</span>
+                                    <span>Ponte</span>
+                                </div>
+                            <?php endif; ?>
+
+                            <!-- Lista de Chips de Encontros e Deslocamentos -->
                             <?php if (!empty($dia['encontros'])): ?>
                                 <div class="day-classes-list">
                                     <?php foreach (array_slice($dia['encontros'], 0, 2) as $enc): ?>
-                                        <?php $tCfg = $enc['turno_config']; ?>
-                                        <div class="class-chip" style="background: <?= $tCfg['cor_fundo'] ?>; color: <?= $tCfg['cor_texto'] ?>; border: 1px solid <?= $tCfg['cor_borda'] ?>;" title="<?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?>">
-                                            <strong>[<?= $enc['turno'] ?>]</strong>
-                                            <span><?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?></span>
-                                        </div>
+                                        <?php 
+                                        $isDesloc = (($enc['tipo'] ?? 'aula') === 'deslocamento');
+                                        $tCfg = $enc['turno_config']; 
+                                        ?>
+                                        <?php if ($isDesloc): ?>
+                                            <div class="class-chip" style="background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE;" title="<?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?>">
+                                                <strong>✈ [<?= $enc['turno'] ?>]</strong>
+                                                <span><?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?></span>
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="class-chip" style="background: <?= $tCfg['cor_fundo'] ?>; color: <?= $tCfg['cor_texto'] ?>; border: 1px solid <?= $tCfg['cor_borda'] ?>;" title="<?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?>">
+                                                <strong>[<?= $enc['turno'] ?>]</strong>
+                                                <span><?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?></span>
+                                            </div>
+                                        <?php endif; ?>
                                     <?php endforeach; ?>
                                     <?php if (count($dia['encontros']) > 2): ?>
                                         <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: 600;">+<?= count($dia['encontros']) - 2 ?> mais</span>
@@ -931,12 +1073,25 @@ ob_start();
                                 <?php foreach (['M', 'V', 'N', 'D'] as $sSigla): ?>
                                     <?php
                                     $isOcupado = in_array($sSigla, $dia['turnos_ocupados'], true) || (in_array('D', $dia['turnos_ocupados'], true) && $sSigla !== 'D');
+                                    $isDeslocTurno = false;
+                                    foreach ($dia['encontros'] as $encCheck) {
+                                        if ($encCheck['turno'] === $sSigla && ($encCheck['tipo'] ?? 'aula') === 'deslocamento') {
+                                            $isDeslocTurno = true;
+                                            break;
+                                        }
+                                    }
                                     $sCfg = $turnosConfig[$sSigla];
                                     ?>
                                     <?php if ($isOcupado): ?>
-                                        <div class="turn-slot" style="background: <?= $sCfg['cor_fundo'] ?>; color: <?= $sCfg['cor_texto'] ?>; border: 1px solid <?= $sCfg['cor_borda'] ?>;">
-                                            <?= $sSigla ?>
-                                        </div>
+                                        <?php if ($isDeslocTurno): ?>
+                                            <div class="turn-slot" style="background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE;" title="Deslocamento Logístico ✈">
+                                                ✈
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="turn-slot" style="background: <?= $sCfg['cor_fundo'] ?>; color: <?= $sCfg['cor_texto'] ?>; border: 1px solid <?= $sCfg['cor_borda'] ?>;">
+                                                <?= $sSigla ?>
+                                            </div>
+                                        <?php endif; ?>
                                     <?php else: ?>
                                         <div class="turn-slot empty-slot">
                                             <?= $sSigla ?>
@@ -961,9 +1116,19 @@ ob_start();
                         <a href="/diario/calendario?view=mensal&ano=<?= $ano ?>&mes=<?= $mNum ?>" class="mini-month-title">
                             <?= $m['nome'] ?>
                         </a>
-                        <?php if ($m['total_aulas'] > 0): ?>
-                            <span class="mini-month-badge"><?= $m['total_aulas'] ?> <?= $m['total_aulas'] === 1 ? 'aula' : 'aulas' ?></span>
-                        <?php endif; ?>
+                        <div style="display: flex; align-items: center; gap: 0.35rem;">
+                            <?php if (!empty($m['workload']['is_sobrecarga'])): ?>
+                                <span class="mini-month-badge" style="background: #FEE2E2; color: #DC2626;" title="Sobrecarga: <?= $m['workload']['total_horas'] ?>h (Teto de 80h excedido)">
+                                    <?= $m['workload']['total_horas'] ?>h ⚠️
+                                </span>
+                            <?php elseif (!empty($m['workload']['total_horas']) && $m['workload']['total_horas'] > 0): ?>
+                                <span class="mini-month-badge" style="background: #ECFEFF; color: var(--primary);" title="Carga pedagógica mensal">
+                                    <?= $m['workload']['total_horas'] ?>h / 80h
+                                </span>
+                            <?php elseif ($m['total_aulas'] > 0): ?>
+                                <span class="mini-month-badge"><?= $m['total_aulas'] ?> <?= $m['total_aulas'] === 1 ? 'aula' : 'aulas' ?></span>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
                     <div class="mini-weekdays">
@@ -1028,14 +1193,16 @@ ob_start();
 <div id="fastScheduleModal" class="cal-modal-overlay">
     <div class="cal-modal">
         <div class="cal-modal-header">
-            <h3 class="cal-modal-title">Novo Agendamento / Reposição</h3>
+            <h3 class="cal-modal-title">Gestão de Agenda & Agendamento</h3>
             <button type="button" class="cal-modal-close" onclick="closeFastScheduleModal()">&times;</button>
         </div>
         <div class="cal-modal-body">
-            <!-- Tabs para escolher Turma Existente vs Nova Turma -->
-            <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem; background: var(--bg); padding: 4px; border-radius: 8px;">
-                <button type="button" id="tabEncontroBtn" class="view-btn active" style="flex: 1; border: none; cursor: pointer;" onclick="switchScheduleTab('encontro')">Aula em Turma Existente</button>
-                <button type="button" id="tabNovaTurmaBtn" class="view-btn" style="flex: 1; border: none; cursor: pointer;" onclick="switchScheduleTab('nova_turma')">Cadastrar Nova Turma</button>
+            <!-- Tabs para escolher modo de agendamento -->
+            <div style="display: flex; gap: 0.35rem; margin-bottom: 1.25rem; background: var(--bg); padding: 4px; border-radius: 8px; flex-wrap: wrap;">
+                <button type="button" id="tabEncontroBtn" class="view-btn active" style="flex: 1; min-width: 110px; border: none; cursor: pointer; text-align: center;" onclick="switchScheduleTab('encontro')">Aula Pedagógica</button>
+                <button type="button" id="tabNovaTurmaBtn" class="view-btn" style="flex: 1; min-width: 110px; border: none; cursor: pointer; text-align: center;" onclick="switchScheduleTab('nova_turma')">Nova Turma</button>
+                <button type="button" id="tabDeslocamentoBtn" class="view-btn" style="flex: 1; min-width: 120px; border: none; cursor: pointer; text-align: center;" onclick="switchScheduleTab('deslocamento')">✈ Deslocamento</button>
+                <button type="button" id="tabRemarcarBtn" class="view-btn" style="flex: 1; min-width: 120px; border: none; cursor: pointer; text-align: center;" onclick="switchScheduleTab('remarcar')">🔄 Remarcar em Bloco</button>
             </div>
 
             <!-- Formulário 1: Aula em Turma Existente -->
@@ -1086,6 +1253,13 @@ ob_start();
                     <input type="text" id="enc_conteudo" name="conteudo_previsto" class="form-control" placeholder="Ex: Módulo 2: DAX e Medidas Calculadas">
                 </div>
 
+                <div style="background: #F8FAFC; border: 1px dashed var(--border); border-radius: 6px; padding: 0.6rem 0.85rem; margin-top: 0.75rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; color: var(--text);">
+                        <input type="checkbox" name="confirmar_excecao_feriado" value="1">
+                        <span>Confirmar <strong>exceção consciente</strong> se a data for feriado ou bloqueio</span>
+                    </label>
+                </div>
+
                 <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
                     <button type="button" class="view-btn" onclick="closeFastScheduleModal()">Cancelar</button>
                     <button type="submit" class="btn-submit">Confirmar Agendamento</button>
@@ -1105,6 +1279,11 @@ ob_start();
                 <div class="form-group">
                     <label class="form-label" for="nova_cliente">Cliente / Empresa Contratante:</label>
                     <input type="text" id="nova_cliente" name="cliente_nome" class="form-control" placeholder="Ex: Sicoob Credisul">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="nova_cidade">Cidade / Local de Realização:</label>
+                    <input type="text" id="nova_cidade" name="cidade" class="form-control" value="Goiânia - GO" placeholder="Ex: Goiânia - GO, Rio Verde - GO">
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
@@ -1143,9 +1322,118 @@ ob_start();
                     <input type="text" id="nova_conteudo" name="conteudo_previsto" class="form-control" placeholder="Ex: Módulo 1: Fundamentos">
                 </div>
 
+                <div style="background: #F8FAFC; border: 1px dashed var(--border); border-radius: 6px; padding: 0.6rem 0.85rem; margin-top: 0.75rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; color: var(--text);">
+                        <input type="checkbox" name="confirmar_excecao_feriado" value="1">
+                        <span>Confirmar <strong>exceção consciente</strong> se a data for feriado ou bloqueio</span>
+                    </label>
+                </div>
+
                 <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
                     <button type="button" class="view-btn" onclick="closeFastScheduleModal()">Cancelar</button>
                     <button type="submit" class="btn-submit">Criar e Agendar</button>
+                </div>
+            </form>
+
+            <!-- Formulário 3: Agendar Deslocamento Logístico -->
+            <form id="formAgendarDeslocamento" method="POST" action="/diario/calendario" style="display: none;">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="acao" value="agendar_deslocamento">
+
+                <div style="background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.8125rem; color: #3730A3;">
+                    <strong>✈ Deslocamento Logístico:</strong> Bloqueia turnos de viagem (Goiânia ⇄ Cidade do cliente) na agenda, inclusive em fins de semana, prevenindo choques sem gerar lista de chamada nem computar carga horária de certificados.
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="desl_turma">Turma Vinculada à Viagem:</label>
+                    <select id="desl_turma" name="turma_id" class="form-control" required>
+                        <option value="">Selecione uma turma...</option>
+                        <?php foreach ($turmasDisponiveis as $t): ?>
+                            <option value="<?= $t['id'] ?>">
+                                <?= htmlspecialchars($t['curso_nome'], ENT_QUOTES, 'UTF-8') ?> — <?= htmlspecialchars($t['cliente_nome'] ?: 'Sem cliente', ENT_QUOTES, 'UTF-8') ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div class="form-group">
+                        <label class="form-label" for="desl_data">Data da Viagem / Deslocamento:</label>
+                        <input type="date" id="desl_data" name="data_encontro" class="form-control" required value="<?= $hoje ?>">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="desl_turno">Turno Reservado:</label>
+                        <select id="desl_turno" name="turno" class="form-control" required>
+                            <option value="M">[M] Matutino</option>
+                            <option value="V" selected>[V] Vespertino</option>
+                            <option value="N">[N] Noturno</option>
+                            <option value="D">[D] Dia Todo</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="desl_direcao">Direção:</label>
+                    <select id="desl_direcao" name="direcao" class="form-control" required>
+                        <option value="ida">✈ Ida (Goiânia ➔ Cidade do Treinamento)</option>
+                        <option value="volta">✈ Volta (Cidade do Treinamento ➔ Goiânia)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="desl_descricao">Descrição Personalizada (Opcional):</label>
+                    <input type="text" id="desl_descricao" name="descricao" class="form-control" placeholder="Ex: Translado rodoviário / Voo comercial">
+                </div>
+
+                <div style="background: #F8FAFC; border: 1px dashed var(--border); border-radius: 6px; padding: 0.6rem 0.85rem; margin-top: 0.75rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; color: var(--text);">
+                        <input type="checkbox" name="confirmar_excecao_feriado" value="1">
+                        <span>Confirmar <strong>exceção consciente</strong> se a viagem for em feriado</span>
+                    </label>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+                    <button type="button" class="view-btn" onclick="closeFastScheduleModal()">Cancelar</button>
+                    <button type="submit" class="btn-submit" style="background: #4338CA;">Agendar Deslocamento ✈</button>
+                </div>
+            </form>
+
+            <!-- Formulário 4: Remarcação em Bloco -->
+            <form id="formRemarcarTurma" method="POST" action="/diario/calendario" style="display: none;">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="acao" value="remarcar_turma">
+
+                <div style="background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.8125rem; color: #92400E;">
+                    <strong>Motor Atômico de Remarcação:</strong> Transfere em bloco todas as aulas e deslocamentos para uma nova data mantendo o mesmo intervalo de dias. Validação antecipada de colisões garante que, caso qualquer data futura colida, a operação é revertida integralmente.
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="rem_turma">Turma a Ser Remarcada:</label>
+                    <select id="rem_turma" name="turma_id" class="form-control" required>
+                        <option value="">Selecione a turma...</option>
+                        <?php foreach ($turmasDisponiveis as $t): ?>
+                            <option value="<?= $t['id'] ?>">
+                                <?= htmlspecialchars($t['curso_nome'], ENT_QUOTES, 'UTF-8') ?> — <?= htmlspecialchars($t['cliente_nome'] ?: 'Sem cliente', ENT_QUOTES, 'UTF-8') ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="rem_nova_data">Nova Data de Início (1º Encontro):</label>
+                    <input type="date" id="rem_nova_data" name="nova_data_inicio" class="form-control" required value="<?= $hoje ?>">
+                </div>
+
+                <div style="background: #F8FAFC; border: 1px dashed var(--border); border-radius: 6px; padding: 0.6rem 0.85rem; margin-top: 0.75rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; color: var(--text);">
+                        <input type="checkbox" name="confirmar_excecao_feriado" value="1">
+                        <span>Confirmar <strong>exceção consciente</strong> se as novas datas incluírem feriados</span>
+                    </label>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+                    <button type="button" class="view-btn" onclick="closeFastScheduleModal()">Cancelar</button>
+                    <button type="submit" class="btn-submit" style="background: #0284C7;">Remarcar em Bloco 🔄</button>
                 </div>
             </form>
         </div>
@@ -1177,27 +1465,51 @@ ob_start();
 
     function showPopover(e, data) {
         clearTimeout(popoverTimeout);
-        if (!data || !data.encontros || data.encontros.length === 0) return;
+        if (!data) return;
+        const hasEncontros = data.encontros && data.encontros.length > 0;
+        const hasBloqueio = !!data.bloqueio;
+        const hasPonte = !!data.ponte;
+        if (!hasEncontros && !hasBloqueio && !hasPonte) return;
 
         let html = `
             <div class="popover-header">
                 <span class="popover-date">${data.data_formatada} (${data.dia_semana})</span>
-                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">${data.encontros.length} aula(s)</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">${hasEncontros ? data.encontros.length + ' agendamento(s)' : 'Dia Livre'}</span>
             </div>
         `;
 
-        data.encontros.forEach(enc => {
+        if (hasBloqueio) {
+            const isFeriado = data.bloqueio.tipo === 'feriado_nacional';
             html += `
-                <div class="popover-item">
-                    <div class="popover-item-title">[${enc.turno_sigla}] ${enc.curso}</div>
-                    <div class="popover-item-client">${enc.cliente}</div>
-                    <div class="popover-item-footer">
-                        <span style="font-weight: 600; color: var(--primary);">${enc.horario}</span>
-                        <span style="text-transform: uppercase; font-size: 0.65rem; background: #E2E8F0; padding: 1px 5px; border-radius: 4px;">${enc.status_turma}</span>
-                    </div>
+                <div style="background: ${isFeriado ? '#FEF3C7' : '#F1F5F9'}; border: 1px solid ${isFeriado ? '#FDE68A' : '#CBD5E1'}; border-radius: 6px; padding: 0.5rem; margin-bottom: 0.5rem; font-size: 0.8rem; color: ${isFeriado ? '#92400E' : '#334155'};">
+                    <strong>${isFeriado ? '🇧🇷 Feriado Nacional' : '🔒 Bloqueio'}:</strong> ${data.bloqueio.descricao}
                 </div>
             `;
-        });
+        }
+
+        if (hasPonte) {
+            html += `
+                <div style="background: #F0FDF4; border: 1px dashed #86EFAC; border-radius: 6px; padding: 0.45rem 0.6rem; margin-bottom: 0.5rem; font-size: 0.75rem; color: #166534;">
+                    <strong>🏖️ Sugestão de Ponte:</strong> ${data.ponte.sugestao}
+                </div>
+            `;
+        }
+
+        if (hasEncontros) {
+            data.encontros.forEach(enc => {
+                const isDesloc = (enc.tipo === 'deslocamento');
+                html += `
+                    <div class="popover-item" style="${isDesloc ? 'border-left: 3px solid #6366F1; background: #F8FAFC;' : ''}">
+                        <div class="popover-item-title">${isDesloc ? '✈ [Deslocamento Logístico]' : '[' + enc.turno_sigla + ']'} ${enc.curso}</div>
+                        <div class="popover-item-client">${enc.cliente}</div>
+                        <div class="popover-item-footer">
+                            <span style="font-weight: 600; color: ${isDesloc ? '#4338CA' : 'var(--primary)'};">${isDesloc ? 'Turno ' + enc.turno_sigla : enc.horario}</span>
+                            <span style="text-transform: uppercase; font-size: 0.65rem; background: ${isDesloc ? '#EEF2FF; color: #4338CA' : '#E2E8F0'}; padding: 1px 5px; border-radius: 4px;">${isDesloc ? 'Logística' : enc.status_turma}</span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
 
         popoverEl.innerHTML = html;
         popoverEl.classList.add('visible');
@@ -1232,7 +1544,7 @@ ob_start();
         if (rawData) {
             try {
                 const data = JSON.parse(rawData);
-                if (data && data.encontros && data.encontros.length > 0) {
+                if (data && ((data.encontros && data.encontros.length > 0) || data.bloqueio || data.ponte)) {
                     openDayModalWithData(data);
                     return;
                 }
@@ -1246,31 +1558,76 @@ ob_start();
         document.getElementById('modalDayTitle').innerText = `${data.data_formatada} — ${data.dia_semana}`;
         let html = `<div style="margin-bottom: 1.25rem;">`;
 
-        data.encontros.forEach(enc => {
+        if (data.bloqueio) {
+            const isFeriado = data.bloqueio.tipo === 'feriado_nacional';
             html += `
-                <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.35rem;">
-                        <h4 style="font-size: 0.9375rem; font-weight: 700; color: var(--dark);">[${enc.turno_sigla}] ${enc.curso}</h4>
-                        <span style="background: #E0F2FE; color: #0369A1; font-weight: 700; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;">${enc.status_turma}</span>
+                <div style="background: ${isFeriado ? '#FEF3C7' : '#F1F5F9'}; border: 1px solid ${isFeriado ? '#FDE68A' : '#CBD5E1'}; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.75rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700; color: ${isFeriado ? '#92400E' : '#334155'};">
+                        <span>${isFeriado ? '🇧🇷' : '🔒'}</span>
+                        <span>${isFeriado ? 'Feriado Nacional Oficial' : 'Bloqueio de Agenda'}</span>
                     </div>
-                    <p style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 0.5rem;">Cliente: <strong>${enc.cliente}</strong> | Horário: <strong>${enc.horario}</strong></p>
-                    
-                    <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
-                        <a href="/diario/aula?encontro_id=${enc.encontro_id}" class="btn-submit" style="font-size: 0.78rem; text-decoration: none; padding: 0.4rem 0.8rem;">
-                            Abrir Diário & Chamada
-                        </a>
+                    <div style="font-size: 0.875rem; color: var(--dark); margin-top: 0.25rem; font-weight: 600;">${data.bloqueio.descricao}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;">
+                        ${data.bloqueio.permite_excecao ? 'Permite agendamento mediante confirmação consciente de exceção.' : 'Bloqueio impeditivo rigoroso.'}
                     </div>
                 </div>
             `;
-        });
+        }
+
+        if (data.ponte) {
+            html += `
+                <div style="background: #F0FDF4; border: 1px dashed #86EFAC; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; font-size: 0.8125rem; color: #166534;">
+                    <strong>🏖️ Sugestão de Ponte Inteligente:</strong> ${data.ponte.sugestao}
+                </div>
+            `;
+        }
+
+        if (data.encontros && data.encontros.length > 0) {
+            data.encontros.forEach(enc => {
+                const isDesloc = (enc.tipo === 'deslocamento');
+                html += `
+                    <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; ${isDesloc ? 'border-left: 4px solid #6366F1;' : ''}">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.35rem;">
+                            <h4 style="font-size: 0.9375rem; font-weight: 700; color: var(--dark);">
+                                ${isDesloc ? '✈ [Deslocamento] ' : '[' + enc.turno_sigla + '] '} ${enc.curso}
+                            </h4>
+                            <span style="background: ${isDesloc ? '#EEF2FF; color: #4338CA' : '#E0F2FE; color: #0369A1'}; font-weight: 700; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;">
+                                ${isDesloc ? 'Logística ✈' : enc.status_turma}
+                            </span>
+                        </div>
+                        <p style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                            Cliente: <strong>${enc.cliente}</strong> | Horário/Turno: <strong>${isDesloc ? 'Turno ' + enc.turno_sigla : enc.horario}</strong>
+                        </p>
+                        ${enc.conteudo ? '<p style="font-size: 0.775rem; color: var(--text); margin-bottom: 0.5rem; font-style: italic;">' + enc.conteudo + '</p>' : ''}
+                        
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap;">
+                            ${!isDesloc ? `
+                                <a href="/diario/aula?encontro_id=${enc.encontro_id}" class="btn-submit" style="font-size: 0.78rem; text-decoration: none; padding: 0.4rem 0.8rem;">
+                                    Abrir Diário & Chamada
+                                </a>
+                            ` : `
+                                <span style="font-size: 0.78rem; color: #4338CA; font-weight: 600; background: #EEF2FF; padding: 0.4rem 0.8rem; border-radius: 6px;">
+                                    ✈ Bloqueio Logístico (Sem chamada / Sem carga horária)
+                                </span>
+                            `}
+                            <a href="/diario/turma?turma_id=${enc.turma_id}" class="view-btn" style="font-size: 0.78rem; text-decoration: none; padding: 0.4rem 0.8rem;">
+                                Detalhes da Turma
+                            </a>
+                            <button type="button" class="view-btn" style="font-size: 0.78rem; padding: 0.4rem 0.8rem; cursor: pointer;" onclick="closeDayModal(); openRescheduleTurmaModal(${enc.turma_id})">
+                                🔄 Remarcar Turma
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
 
         html += `</div>`;
 
-        // Se houver turnos livres, permite agendar
         html += `
-            <div style="border-top: 1px solid var(--border); padding-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 0.8125rem; color: var(--text-muted);">Precisa lançar outra aula neste dia?</span>
-                <button type="button" class="btn-new-schedule" onclick="closeDayModal(); openFastScheduleModal('${data.data}', 'V')">+ Agendar Outro Turno</button>
+            <div style="border-top: 1px solid var(--border); padding-top: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                <span style="font-size: 0.8125rem; color: var(--text-muted);">Precisa agendar compromisso neste dia?</span>
+                <button type="button" class="btn-submit" style="font-size: 0.8125rem;" onclick="closeDayModal(); openFastScheduleModal('${data.data}', 'V')">+ Novo Agendamento</button>
             </div>
         `;
 
@@ -1285,11 +1642,28 @@ ob_start();
     function openFastScheduleModal(dateStr, defaultTurno) {
         document.getElementById('enc_data').value = dateStr;
         document.getElementById('nova_data').value = dateStr;
+        if (document.getElementById('desl_data')) {
+            document.getElementById('desl_data').value = dateStr;
+        }
+        if (document.getElementById('rem_nova_data')) {
+            document.getElementById('rem_nova_data').value = dateStr;
+        }
         if (defaultTurno) {
             document.getElementById('enc_turno').value = defaultTurno;
             document.getElementById('nova_turno').value = defaultTurno;
+            if (document.getElementById('desl_turno')) {
+                document.getElementById('desl_turno').value = defaultTurno;
+            }
         }
         document.getElementById('fastScheduleModal').classList.add('active');
+    }
+
+    function openRescheduleTurmaModal(turmaId) {
+        openFastScheduleModal('<?= $hoje ?>', 'V');
+        switchScheduleTab('remarcar');
+        if (turmaId && document.getElementById('rem_turma')) {
+            document.getElementById('rem_turma').value = turmaId;
+        }
     }
 
     function closeFastScheduleModal() {
@@ -1297,16 +1671,30 @@ ob_start();
     }
 
     function switchScheduleTab(tab) {
+        const formIds = ['formAgendarEncontro', 'formAgendarNovaTurma', 'formAgendarDeslocamento', 'formRemarcarTurma'];
+        formIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+
+        const btnIds = ['tabEncontroBtn', 'tabNovaTurmaBtn', 'tabDeslocamentoBtn', 'tabRemarcarBtn'];
+        btnIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('active');
+        });
+
         if (tab === 'encontro') {
             document.getElementById('formAgendarEncontro').style.display = 'block';
-            document.getElementById('formAgendarNovaTurma').style.display = 'none';
             document.getElementById('tabEncontroBtn').classList.add('active');
-            document.getElementById('tabNovaTurmaBtn').classList.remove('active');
-        } else {
-            document.getElementById('formAgendarEncontro').style.display = 'none';
+        } else if (tab === 'nova_turma') {
             document.getElementById('formAgendarNovaTurma').style.display = 'block';
-            document.getElementById('tabEncontroBtn').classList.remove('active');
             document.getElementById('tabNovaTurmaBtn').classList.add('active');
+        } else if (tab === 'deslocamento') {
+            document.getElementById('formAgendarDeslocamento').style.display = 'block';
+            document.getElementById('tabDeslocamentoBtn').classList.add('active');
+        } else if (tab === 'remarcar') {
+            document.getElementById('formRemarcarTurma').style.display = 'block';
+            document.getElementById('tabRemarcarBtn').classList.add('active');
         }
     }
 

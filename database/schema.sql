@@ -193,4 +193,21 @@ CREATE TABLE IF NOT EXISTS `tentativas_login` (
     INDEX `idx_tentativas_ip_user` (`ip_address`, `username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- -----------------------------------------------------------------------------
+-- 9. Tabela: bloqueios_agenda
+-- Feriados nacionais oficiais e bloqueios particulares do instrutor (Ticket 08)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `bloqueios_agenda` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `data` DATE NOT NULL,
+    `descricao` VARCHAR(255) NOT NULL,
+    `tipo` ENUM('feriado_nacional', 'bloqueio_pessoal') NOT NULL DEFAULT 'feriado_nacional',
+    `bloqueante` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=Bloqueia agendamento por padrão, 0=Informativo',
+    `permite_excecao` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=Permite exceção consciente confirmada pelo operador',
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_bloqueios_data` (`data`),
+    INDEX `idx_bloqueios_tipo` (`tipo`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
