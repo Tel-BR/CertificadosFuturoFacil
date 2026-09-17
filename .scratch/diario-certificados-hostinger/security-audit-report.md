@@ -1,3 +1,6 @@
+> [!warning] Relatório histórico superado
+> A avaliação de risco abaixo foi superada pela auditoria somente de leitura de 2026-09-17, registrada primeiro no cofre Obsidian e copiada em [auditoria atual](security-audit-2026-09-17.md). O relatório novo identificou achados 🔴 R1 e R2. Preserve este arquivo apenas como histórico; nenhuma correção foi aplicada.
+
 # Relatório de Auditoria de Segurança e Perímetro (OWASP & Guard-Audit)
 
 **Data:** 2026-09-17  

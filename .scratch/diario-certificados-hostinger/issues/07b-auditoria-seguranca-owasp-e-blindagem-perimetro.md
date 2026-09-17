@@ -13,3 +13,7 @@ Executar varredura completa de segurança estática e de perímetro sobre a base
 - [ ] Cabeçalhos de segurança HTTP implementados no `public/.htaccess` (`Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`).
 - [ ] Bloqueio comprovado contra leitura externa de `SECRETS`, `.db`, `src/` e `credentials.local.php`.
 - [ ] Suíte automatizada criada em `tests/test_ticket_07b_security.php` passando com 100% de sucesso junto com as 10 suítes existentes.
+
+## Comments
+
+- **2026-09-17 — Auditoria somente de leitura:** a avaliação histórica de ausência de riscos críticos foi superada pelo relatório canônico no Obsidian, com cópia técnica em [security-audit-2026-09-17.md](../security-audit-2026-09-17.md). Foram identificados R1 (dados pessoais e códigos versionados) e R2 (senhas administrativas padrão com ativação em produção não confirmada). As demais verificações e limitações constam da matriz. Nenhuma correção, teste com escrita ou mudança de servidor foi realizada. A decisão segue pendente item por item, começando por R1. A caixa de verificação que pressupõe ausência de achados críticos não deve ser marcada.
