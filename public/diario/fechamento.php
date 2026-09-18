@@ -27,7 +27,7 @@ $turmaId = isset($_GET['turma_id']) ? (int)$_GET['turma_id'] : (isset($_GET['id'
 
 if ($turmaId <= 0) {
     // Redireciona para a primeira turma ativa ou lista geral
-    $stmtFirst = $pdo->query("SELECT id FROM turmas ORDER BY id DESC LIMIT 1");
+    $stmtFirst = $pdo->query("SELECT id FROM turmas WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 1");
     $turmaId = (int)$stmtFirst->fetchColumn();
     if ($turmaId <= 0) {
         header('Location: /diario/turmas');

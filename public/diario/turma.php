@@ -659,7 +659,9 @@ ob_start();
 <?php if ($isTrashed): ?>
     <div style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
         <div style="display: flex; align-items: center; gap: 0.75rem;">
-            <span style="font-size: 1.75rem;">🗑️</span>
+            <div style="display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: #FEE2E2; color: #DC2626; flex-shrink: 0;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            </div>
             <div>
                 <strong style="color: #991B1B; font-size: 1rem;">Esta turma está na Lixeira</strong>
                 <p style="color: #B91C1C; font-size: 0.8125rem; margin: 0.25rem 0 0 0;">
@@ -672,14 +674,16 @@ ob_start();
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <input type="hidden" name="action" value="restore">
                 <button type="submit" style="background: #0E7490; color: #FFFFFF; border: none; border-radius: 6px; padding: 0.55rem 0.95rem; font-weight: 700; font-size: 0.8125rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;">
-                    <span>↺ Restaurar Turma</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    <span>Restaurar Turma</span>
                 </button>
             </form>
             <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="margin: 0;" onsubmit="return confirm('ATENÇÃO: A exclusão física definitiva é permanente e irreversível. Se esta turma possuir certificados oficiais no Livro de Registros, a exclusão será bloqueada. Confirmar?');">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <input type="hidden" name="action" value="expunge">
                 <button type="submit" style="background: #DC2626; color: #FFFFFF; border: none; border-radius: 6px; padding: 0.55rem 0.95rem; font-weight: 700; font-size: 0.8125rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;">
-                    <span>✕ Excluir Definitivamente</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    <span>Excluir Definitivamente</span>
                 </button>
             </form>
         </div>
@@ -700,7 +704,8 @@ ob_start();
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                 <input type="hidden" name="action" value="trash">
                 <button type="submit" style="background: var(--surface); color: #DC2626; border: 1px solid #FECACA; border-radius: 6px; padding: 0.45rem 0.75rem; font-size: 0.75rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;">
-                    <span>🗑️ Mover para Lixeira</span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    <span>Mover para Lixeira</span>
                 </button>
             </form>
         <?php endif; ?>

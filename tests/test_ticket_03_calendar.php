@@ -34,9 +34,9 @@ echo "{$azul}===================================================================
 echo " Executando Suíte de Testes — Ticket 03: Calendário e Costura de Teste 5\n";
 echo "======================================================================{$reset}\n\n";
 
-$testDbPath = __DIR__ . '/test_temp_calendar.db';
+$testDbPath = __DIR__ . '/test_temp_calendar_' . uniqid() . '.db';
 if (file_exists($testDbPath)) {
-    unlink($testDbPath);
+    @unlink($testDbPath);
 }
 
 $passedCount = 0;
@@ -64,6 +64,7 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
+    $pdo->exec("PRAGMA busy_timeout = 5000;");
     $schemaSql = file_get_contents(__DIR__ . '/../database/schema_sqlite.sql');
     $pdo->exec($schemaSql);
 
@@ -327,6 +328,11 @@ try {
     $totalAlunosSeed = (int)$stmtAlunos->fetchColumn();
     assertTest($totalAlunosSeed > 0, 'Seed inseriu alunos fictícios nas turmas');
 
+    $stmtCount->closeCursor();
+    $stmtStatus->closeCursor();
+    $stmtTurnos->closeCursor();
+    $stmtAlunos->closeCursor();
+
     // =========================================================================
     // SEÇÃO 6: Testando Renderização HTML da Interface do Calendário
     // =========================================================================
@@ -377,6 +383,9 @@ try {
     echo $e->getTraceAsString() . "\n";
     exit(1);
 } finally {
+    $pdo = null;
+    Database::resetConnection();
+    gc_collect_cycles();
     if (file_exists($testDbPath)) {
         @unlink($testDbPath);
     }

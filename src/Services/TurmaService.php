@@ -21,6 +21,7 @@ class TurmaService
 {
     private PDO $pdo;
     private CalendarService $calendarService;
+    private static bool $schemaEnsured = false;
 
     public function __construct(?PDO $pdo = null, ?CalendarService $calendarService = null)
     {
@@ -34,6 +35,10 @@ class TurmaService
      */
     public function ensureSchema(): void
     {
+        if (self::$schemaEnsured) {
+            return;
+        }
+
         $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
         // 1. Tabela turmas
@@ -87,6 +92,8 @@ class TurmaService
         } catch (Throwable) {
             // Ignora se coluna já existir ou falha não impeditiva
         }
+
+        self::$schemaEnsured = true;
     }
 
     /**
@@ -107,11 +114,11 @@ class TurmaService
 
         $this->pdo->beginTransaction();
         try {
-            $stmt1 = $this->pdo->prepare("UPDATE turmas SET deleted_at = ? WHERE id = ?");
-            $stmt1->execute([$now, $turmaId]);
+            $stmtUpdateTurma = $this->pdo->prepare("UPDATE turmas SET deleted_at = ? WHERE id = ?");
+            $stmtUpdateTurma->execute([$now, $turmaId]);
 
-            $stmt2 = $this->pdo->prepare("UPDATE encontros SET deleted_at = ? WHERE turma_id = ?");
-            $stmt2->execute([$now, $turmaId]);
+            $stmtUpdateEncontros = $this->pdo->prepare("UPDATE encontros SET deleted_at = ? WHERE turma_id = ?");
+            $stmtUpdateEncontros->execute([$now, $turmaId]);
 
             $this->pdo->commit();
             return true;
@@ -209,11 +216,11 @@ class TurmaService
         // Sem conflitos: restaura atomicamente
         $this->pdo->beginTransaction();
         try {
-            $stmt1 = $this->pdo->prepare("UPDATE turmas SET deleted_at = NULL WHERE id = ?");
-            $stmt1->execute([$turmaId]);
+            $stmtRestoreTurma = $this->pdo->prepare("UPDATE turmas SET deleted_at = NULL WHERE id = ?");
+            $stmtRestoreTurma->execute([$turmaId]);
 
-            $stmt2 = $this->pdo->prepare("UPDATE encontros SET deleted_at = NULL WHERE turma_id = ?");
-            $stmt2->execute([$turmaId]);
+            $stmtRestoreEncontros = $this->pdo->prepare("UPDATE encontros SET deleted_at = NULL WHERE turma_id = ?");
+            $stmtRestoreEncontros->execute([$turmaId]);
 
             $this->pdo->commit();
 
@@ -238,7 +245,7 @@ class TurmaService
     {
         $this->ensureSchema();
 
-        $stmtTurma = $this->pdo->prepare("SELECT id, codigo_turma, curso_nome FROM turmas WHERE id = ?");
+        $stmtTurma = $this->pdo->prepare("SELECT id, codigo_turma, curso_nome, deleted_at FROM turmas WHERE id = ?");
         $stmtTurma->execute([$turmaId]);
         $turma = $stmtTurma->fetch(PDO::FETCH_ASSOC);
 
@@ -246,6 +253,14 @@ class TurmaService
             return [
                 'success' => false,
                 'message' => "Turma ID {$turmaId} não encontrada.",
+            ];
+        }
+
+        // Deve estar previamente na Lixeira
+        if (empty($turma['deleted_at'])) {
+            return [
+                'success' => false,
+                'message' => "Não é permitido excluir definitivamente uma turma ativa. Mova a turma para a Lixeira antes de realizar o expurgo.",
             ];
         }
 

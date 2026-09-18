@@ -316,7 +316,11 @@ ob_start();
 <?php if ($feedbackMessage): ?>
     <div style="background: <?= $feedbackType === 'success' ? '#ECFDF5' : '#FEF2F2' ?>; border: 1px solid <?= $feedbackType === 'success' ? '#A7F3D0' : '#FECACA' ?>; color: <?= $feedbackType === 'success' ? '#065F46' : '#991B1B' ?>; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
         <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
-            <span style="font-size: 1.25rem;"><?= $feedbackType === 'success' ? '✓' : '⚠️' ?></span>
+            <?php if ($feedbackType === 'success'): ?>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <?php else: ?>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <?php endif; ?>
             <div>
                 <strong><?= htmlspecialchars($feedbackMessage, ENT_QUOTES, 'UTF-8') ?></strong>
                 <?php if (!empty($conflictDetails)): ?>
@@ -340,7 +344,8 @@ ob_start();
         <span class="tab-counter"><?= $activeCount ?></span>
     </a>
     <a href="/diario/turmas?filtro=lixeira" class="tab-pill <?= $filtro === 'lixeira' ? 'active' : '' ?>">
-        <span>🗑️ Lixeira</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+        <span>Lixeira</span>
         <span class="tab-counter"><?= $trashCount ?></span>
     </a>
 </div>
@@ -387,7 +392,8 @@ ob_start();
                                 <input type="hidden" name="action" value="restore">
                                 <input type="hidden" name="turma_id" value="<?= $tId ?>">
                                 <button type="submit" class="btn-action-restore" style="width: 100%;" title="Restaura a turma para a grade se os horários estiverem livres">
-                                    <span>↺ Restaurar</span>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                                    <span>Restaurar</span>
                                 </button>
                             </form>
 
@@ -396,7 +402,8 @@ ob_start();
                                 <input type="hidden" name="action" value="expunge">
                                 <input type="hidden" name="turma_id" value="<?= $tId ?>">
                                 <button type="submit" class="btn-action-danger" style="width: 100%;" title="Expurga definitivamente do banco de dados se não houver certificados emitidos">
-                                    <span>✕ Excluir</span>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                                    <span>Excluir Definitivamente</span>
                                 </button>
                             </form>
                         </div>
@@ -485,7 +492,8 @@ ob_start();
                                 <span>Gerenciar</span>
                             </a>
                             <a href="/diario/fechamento?turma_id=<?= $tId ?>" style="display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; background: var(--primary); color: #FFFFFF; font-size: 0.75rem; font-weight: 700; padding: 0.45rem 0.65rem; border-radius: 6px; text-decoration: none;" title="Fechamento Assistido e Certificados">
-                                <span>🎓 Fechamento</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+                                <span>Fechamento</span>
                             </a>
                             <a href="/diario/turma?turma_id=<?= $tId ?>&action=export" style="display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; background: #DCFCE7; color: #166534; border: 1px solid #86EFAC; font-size: 0.75rem; font-weight: 700; padding: 0.45rem 0.65rem; border-radius: 6px; text-decoration: none;" title="Exportar Planilha Excel (.xlsx)">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -496,7 +504,7 @@ ob_start();
                                 <input type="hidden" name="action" value="trash">
                                 <input type="hidden" name="turma_id" value="<?= $tId ?>">
                                 <button type="submit" class="btn-action-danger" title="Mover para a Lixeira">
-                                    <span>🗑️</span>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                 </button>
                             </form>
                         </div>

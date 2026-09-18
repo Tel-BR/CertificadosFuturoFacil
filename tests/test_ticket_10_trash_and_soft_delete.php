@@ -268,10 +268,15 @@ try {
     ");
     $stmtReg->execute([$turmaId3]);
 
+    // Tenta expurgar turma ativa (fora da lixeira) - Turma 1 está ativa
+    $resExpungeT1Ativa = $turmaService->expungeTurma($turmaId1);
+    assertTest($resExpungeT1Ativa['success'] === false, "expungeTurma bloqueia exclusão de turma que não está na Lixeira");
+    assertTest(str_contains(strtolower($resExpungeT1Ativa['message']), 'lixeira'), "Mensagem orienta que a turma deve estar na lixeira antes de expurgar");
+
     // Move Turma 3 para a lixeira
     $turmaService->moveToTrash($turmaId3);
 
-    // Tenta expurgo definitivo da Turma 3
+    // Tenta expurgo definitivo da Turma 3 (possui certificados)
     $resExpungeT3 = $turmaService->expungeTurma($turmaId3);
     assertTest($resExpungeT3['success'] === false, "expungeTurma bloqueado para turma com certificados emitidos");
     assertTest(str_contains(strtolower($resExpungeT3['message']), 'certificado') || str_contains(strtolower($resExpungeT3['message']), 'livro'), "Mensagem de recusa destaca a proteção de fé pública dos certificados");
@@ -349,7 +354,7 @@ try {
     $htmlAtivas = ob_get_clean();
 
     assertTest(str_contains($htmlAtivas, 'Turmas Ativas'), "Tela /diario/turmas renderiza aba 'Turmas Ativas'");
-    assertTest(str_contains($htmlAtivas, '🗑️ Lixeira'), "Tela /diario/turmas renderiza aba '🗑️ Lixeira'");
+    assertTest(str_contains($htmlAtivas, 'filtro=lixeira') && str_contains($htmlAtivas, 'Lixeira'), "Tela /diario/turmas renderiza aba 'Lixeira' com ícone vetorial");
     assertTest(str_contains($htmlAtivas, 'Excel Básico'), "Aba Ativas exibe Turma 1 ('Excel Básico')");
     assertTest(!str_contains($htmlAtivas, 'Gestão Financeira'), "Aba Ativas omite Turma 3 descartada na lixeira");
     assertTest(str_contains($htmlAtivas, 'action="trash"') || str_contains($htmlAtivas, 'name="action" value="trash"'), "Aba Ativas renderiza formulário para mover à lixeira");

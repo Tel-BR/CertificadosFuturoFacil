@@ -248,7 +248,7 @@ $turnosConfig = CalendarService::getTurnosConfig();
 $stmtTurmasList = $pdo->query("
     SELECT id, codigo_turma, curso_nome, cliente_nome, turno_padrao, status 
     FROM turmas 
-    WHERE status != 'cancelada' 
+    WHERE status != 'cancelada' AND deleted_at IS NULL 
     ORDER BY status DESC, curso_nome ASC
 ");
 $turmasDisponiveis = $stmtTurmasList->fetchAll(PDO::FETCH_ASSOC);

@@ -150,7 +150,9 @@ class CalendarService
         $inserted = 0;
         foreach ($feriados as $f) {
             $stmtCheck->execute([$f['data']]);
-            if ((int)$stmtCheck->fetchColumn() === 0) {
+            $exists = ((int)$stmtCheck->fetchColumn() > 0);
+            $stmtCheck->closeCursor();
+            if (!$exists) {
                 $stmtInsert->execute([$f['data'], $f['descricao']]);
                 $inserted++;
             }

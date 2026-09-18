@@ -47,7 +47,7 @@ try {
     $stmtReg = $pdo->query("SELECT COUNT(*) FROM registros_certificados");
     $totalCertificados = (int)$stmtReg->fetchColumn();
 
-    $stmtTurmas = $pdo->query("SELECT COUNT(*) FROM turmas");
+    $stmtTurmas = $pdo->query("SELECT COUNT(*) FROM turmas WHERE deleted_at IS NULL");
     $totalTurmas = (int)$stmtTurmas->fetchColumn();
 
     $stmtAlunos = $pdo->query("SELECT COUNT(*) FROM alunos");

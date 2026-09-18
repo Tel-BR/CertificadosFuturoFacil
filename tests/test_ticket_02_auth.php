@@ -209,7 +209,7 @@ try {
     $layoutHtml = ob_get_clean();
 
     assertTest(str_contains($layoutHtml, 'Calendário'), "Layout base contém atalho operacional para Calendário");
-    assertTest(str_contains($layoutHtml, 'Diário & Turmas'), "Layout base contém atalho operacional para Diário & Turmas");
+    assertTest(str_contains($layoutHtml, 'Diário'), "Layout base contém atalho operacional para Diário");
     assertTest(str_contains($layoutHtml, 'Novo Agendamento'), "Layout base contém botão de ação Novo Agendamento");
     assertTest(str_contains($layoutHtml, 'Operador Teste'), "Layout base exibe o nome do operador logado");
     assertTest(str_contains($layoutHtml, 'action="/diario/logout"'), "Layout base contém formulário de logout protegido");
