@@ -252,7 +252,7 @@ class AuthService
      * @param string|null $identificadorEsperado Slug ou código de turma opcional para validação cruzada
      * @return array{success: bool, error?: string, turma?: array}
      */
-    public function authenticateStudent(string $chaveAcesso, ?string $identificadorEsperado = null): array
+    public function authenticateStudent(string $chaveAcesso, ?string $identificadorEsperado = null, ?array $alunoData = null): array
     {
         $chaveAcesso = trim($chaveAcesso);
 
@@ -327,10 +327,10 @@ class AuthService
         // Inicializa sessão segura e regenera ID para prevenir fixation
         self::startSecureSession();
         if (session_status() === PHP_SESSION_ACTIVE) {
-            session_regenerate_id(true);
-
-            // Estende cookie de sessão para 30 dias se cabeçalhos ainda permitirem
             if (!headers_sent()) {
+                @session_regenerate_id(true);
+
+                // Estende cookie de sessão para 30 dias se cabeçalhos ainda permitirem
                 $cookieParams = session_get_cookie_params();
                 setcookie(
                     session_name(),
@@ -353,6 +353,11 @@ class AuthService
             'cliente_nome'     => (string)($turma['cliente_nome'] ?? ''),
             'status'           => (string)$turma['status'],
             'portal_certificados_modo' => (string)($turma['portal_certificados_modo'] ?? 'nenhum'),
+            'aluno_id'         => isset($alunoData['aluno_id']) ? (int)$alunoData['aluno_id'] : (isset($alunoData['id']) ? (int)$alunoData['id'] : null),
+            'aluno_nome'       => isset($alunoData['aluno_nome']) ? (string)$alunoData['aluno_nome'] : (isset($alunoData['nome_completo']) ? (string)$alunoData['nome_completo'] : null),
+            'aluno_cpf'        => isset($alunoData['aluno_cpf']) ? (string)$alunoData['aluno_cpf'] : (isset($alunoData['cpf_mascarado']) ? (string)$alunoData['cpf_mascarado'] : (isset($alunoData['cpf']) ? (string)$alunoData['cpf'] : null)),
+            'aluno_email'      => isset($alunoData['aluno_email']) ? (string)$alunoData['aluno_email'] : (isset($alunoData['email']) ? (string)$alunoData['email'] : null),
+            'aluno_telefone'   => isset($alunoData['aluno_telefone']) ? (string)$alunoData['aluno_telefone'] : (isset($alunoData['telefone']) ? (string)$alunoData['telefone'] : null),
             'expira_em'        => time() + (30 * 86400),
             'authenticated_at' => date('Y-m-d H:i:s'),
         ];
@@ -772,6 +777,108 @@ class AuthService
             return true;
         } catch (\Throwable) {
             // Em caso de instabilidade na tabela transitória, permite a consulta
+            return true;
+        }
+    }
+
+    /**
+     * Atualiza dados do aluno na sessão atual ativa.
+     */
+    public static function updateAuthenticatedStudentData(array $alunoData): void
+    {
+        self::startSecureSession();
+        if (!isset($_SESSION[self::SESSION_STUDENT_KEY])) {
+            return;
+        }
+        $map = [
+            'id'            => 'aluno_id',
+            'aluno_id'      => 'aluno_id',
+            'nome_completo' => 'aluno_nome',
+            'aluno_nome'    => 'aluno_nome',
+            'cpf_mascarado' => 'aluno_cpf',
+            'cpf'           => 'aluno_cpf',
+            'aluno_cpf'     => 'aluno_cpf',
+            'email'         => 'aluno_email',
+            'aluno_email'   => 'aluno_email',
+            'telefone'      => 'aluno_telefone',
+            'aluno_telefone'=> 'aluno_telefone',
+        ];
+        foreach ($map as $k => $dest) {
+            if (isset($alunoData[$k])) {
+                $_SESSION[self::SESSION_STUDENT_KEY][$dest] = $alunoData[$k];
+            }
+        }
+    }
+
+    /**
+     * Rate-limiting do formulário de auto-acesso/auto-cadastro de alunos via QR Code (/turmas/entrar).
+     * Limita a no máximo 3 requisições a cada 10 minutos (600s) por endereço IP.
+     *
+     * @param string $ip Endereço IP do cliente
+     * @param int $maxRequests Máximo de requisições na janela (padrão: 3)
+     * @param int $windowSeconds Janela de tempo em segundos (padrão: 600)
+     * @return bool True se permitido, False se excedeu o limite
+     */
+    public static function checkStudentAccessRateLimit(string $ip, int $maxRequests = 3, int $windowSeconds = 600, ?\PDO $pdo = null): bool
+    {
+        $pdo = $pdo ?? Database::getConnection();
+        $ip = trim($ip) ?: '127.0.0.1';
+        $username = 'rate_limit_auto_acesso';
+        $now = time();
+
+        try {
+            $stmt = $pdo->prepare("
+                SELECT id, tentativas, updated_at 
+                FROM tentativas_login 
+                WHERE ip_address = :ip AND username = :username 
+                LIMIT 1
+            ");
+            $stmt->execute(['ip' => $ip, 'username' => $username]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if ($row) {
+                $lastUpdated = strtotime((string)$row['updated_at']);
+                $elapsed = $now - $lastUpdated;
+
+                if ($elapsed > $windowSeconds) {
+                    // Janela expirou: reinicia contagem
+                    $updateStmt = $pdo->prepare("
+                        UPDATE tentativas_login 
+                        SET tentativas = 1, updated_at = :agora 
+                        WHERE id = :id
+                    ");
+                    $updateStmt->execute(['agora' => date('Y-m-d H:i:s', $now), 'id' => $row['id']]);
+                    return true;
+                }
+
+                $tentativas = (int)$row['tentativas'];
+                if ($tentativas >= $maxRequests) {
+                    return false;
+                }
+
+                // Incrementa contador dentro da janela
+                $incStmt = $pdo->prepare("
+                    UPDATE tentativas_login 
+                    SET tentativas = tentativas + 1, updated_at = :agora 
+                    WHERE id = :id
+                ");
+                $incStmt->execute(['agora' => date('Y-m-d H:i:s', $now), 'id' => $row['id']]);
+                return true;
+            }
+
+            // Primeiro acesso do IP no auto-acesso
+            $insertStmt = $pdo->prepare("
+                INSERT INTO tentativas_login (ip_address, username, tentativas, ultimo_erro, created_at, updated_at)
+                VALUES (:ip, :username, 1, 'Auto-acesso aluno', :agora, :agora)
+            ");
+            $insertStmt->execute([
+                'ip'       => $ip,
+                'username' => $username,
+                'agora'    => date('Y-m-d H:i:s', $now),
+            ]);
+            return true;
+        } catch (\Throwable) {
+            // Em caso de falha transitória de banco no rate limit, permite a requisição por resiliência
             return true;
         }
     }

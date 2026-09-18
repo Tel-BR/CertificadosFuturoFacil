@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../src/Services/ExcelSyncService.php';
 require_once __DIR__ . '/../../src/Services/MaterialService.php';
 require_once __DIR__ . '/../../src/Services/TurmaService.php';
 require_once __DIR__ . '/../../src/Services/BillingService.php';
+require_once __DIR__ . '/../../src/Utils/QRCodeGenerator.php';
 require_once __DIR__ . '/../../src/Views/layout_admin.php';
 
 use FuturoFacil\Config\Database;
@@ -24,6 +25,7 @@ use FuturoFacil\Services\ExcelSyncService;
 use FuturoFacil\Services\MaterialService;
 use FuturoFacil\Services\TurmaService;
 use FuturoFacil\Services\BillingService;
+use FuturoFacil\Utils\QRCodeGenerator;
 use function FuturoFacil\Views\renderAdminLayout;
 
 AuthService::requireAuth();
@@ -528,6 +530,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// -------------------------------------------------------------
+// AÇÃO: Resolução de Solicitação de Correção Cadastral (Ticket 12)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'resolver_correcao') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido ou expirado.';
+        $feedbackType = 'danger';
+    } else {
+        $requestId = (int)($_POST['request_id'] ?? 0);
+        $aprovar = !empty($_POST['aprovar']);
+        $resposta = trim((string)($_POST['resposta_admin'] ?? ''));
+        try {
+            $res = $turmaService->resolveCorrectionRequest($requestId, $aprovar, $resposta ?: null);
+            if ($res) {
+                $feedbackMessage = $aprovar 
+                    ? 'Solicitação de correção aprovada com sucesso! Dados cadastrais e certificados foram sincronizados.'
+                    : 'Solicitação de correção recusada.';
+                $feedbackType = 'success';
+            } else {
+                $feedbackMessage = 'Não foi possível processar a solicitação informada.';
+                $feedbackType = 'danger';
+            }
+        } catch (Throwable $e) {
+            $feedbackMessage = 'Erro ao processar solicitação de correção: ' . $e->getMessage();
+            $feedbackType = 'danger';
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// AÇÃO: Atualização Direta de Dados do Aluno pelo Instrutor (Ticket 12)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_aluno') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido ou expirado.';
+        $feedbackType = 'danger';
+    } else {
+        $alunoId = (int)($_POST['aluno_id'] ?? 0);
+        $nome = trim((string)($_POST['nome_completo'] ?? ''));
+        $cpf = trim((string)($_POST['cpf'] ?? ''));
+        $email = trim((string)($_POST['email'] ?? ''));
+        $telefone = trim((string)($_POST['telefone'] ?? ''));
+
+        if (empty($nome)) {
+            $feedbackMessage = 'O nome completo do aluno é obrigatório.';
+            $feedbackType = 'danger';
+        } else {
+            try {
+                $turmaService->updateAluno($alunoId, [
+                    'nome_completo' => $nome,
+                    'cpf'           => $cpf,
+                    'email'         => $email,
+                    'telefone'      => $telefone,
+                ]);
+                $feedbackMessage = "Dados do aluno '{$nome}' atualizados com sucesso! Certificados emitidos foram sincronizados.";
+                $feedbackType = 'success';
+            } catch (Throwable $e) {
+                $feedbackMessage = 'Erro ao atualizar aluno: ' . $e->getMessage();
+                $feedbackType = 'danger';
+            }
+        }
+    }
+}
+
 // Consulta todos os materiais da turma (ativos e ocultos para administração)
 $materiaisTurma = $materialService->getMateriaisByTurma($turmaId, false);
 
@@ -554,6 +622,27 @@ $alunos = $stmtAlunos->fetchAll(PDO::FETCH_ASSOC);
 
 $cumulativeFrequencies = $attendanceService->calculateCumulativeFrequencies($turmaId);
 $billingData = $billingService->getTurmaBillingData($turmaId);
+$pedidosCorrecao = $turmaService->getPendingCorrectionRequests($turmaId);
+
+// Configuração inicial do Modo Telão (Ticket 12)
+$hoje = date('Y-m-d');
+$encontroHojeId = 0;
+foreach ($encontros as $enc) {
+    if (($enc['data_encontro'] ?? '') === $hoje) {
+        $encontroHojeId = (int)$enc['id'];
+        break;
+    }
+}
+if ($encontroHojeId === 0 && !empty($encontros)) {
+    $encontroHojeId = (int)$encontros[0]['id'];
+}
+
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+$host = $_SERVER['HTTP_HOST'] ?? 'futurofacil.com.br';
+$baseUrl = $protocol . $host;
+$turmaSlug = (string)($turma['codigo_turma'] ?? '');
+$initialQrUrl = "{$baseUrl}/turmas/entrar?turma=" . urlencode($turmaSlug) . "&cpf=1&wpp=1" . ($encontroHojeId > 0 ? "&encontro_id={$encontroHojeId}" : "");
+$initialQrSvg = QRCodeGenerator::generateSvg($initialQrUrl, 360);
 
 $isTrashed = !empty($turma['deleted_at']);
 $statusClass = $isTrashed ? 'status-lixeira' : ('status-' . ($turma['status'] === 'em_andamento' ? 'andamento' : ($turma['status'] === 'concluida' ? 'concluida' : 'prevista')));
@@ -773,6 +862,284 @@ ob_start();
         align-items: center;
         gap: 0.5rem;
     }
+    /* Estilos do Modo Telão (Ticket 12) */
+    .btn-telao-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: #090D16;
+        color: #F8FAFC;
+        font-weight: 700;
+        font-size: 0.875rem;
+        padding: 0.65rem 1.15rem;
+        border-radius: 8px;
+        text-decoration: none;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+        border: 1px solid #1E293B;
+        cursor: pointer;
+        transition: background 0.15s, transform 0.15s;
+    }
+    .btn-telao-trigger:hover {
+        background: #1E293B;
+        transform: translateY(-1px);
+    }
+    .telao-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: #090D16;
+        color: #F8FAFC;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 1.5rem 2.5rem;
+        box-sizing: border-box;
+        overflow-y: auto;
+    }
+    .telao-overlay.is-active {
+        display: flex;
+    }
+    .telao-top-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .telao-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 1.125rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #38BDF8;
+    }
+    .telao-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    .btn-telao-action {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: #F8FAFC;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        transition: background 0.15s;
+    }
+    .btn-telao-action:hover {
+        background: rgba(255, 255, 255, 0.18);
+    }
+    .telao-toggles-bar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        padding: 0.85rem 1.25rem;
+        margin: 1rem auto 0 auto;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        flex-wrap: wrap;
+        max-width: 820px;
+        width: 100%;
+    }
+    .telao-toggle-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #CBD5E1;
+        cursor: pointer;
+        user-select: none;
+    }
+    .telao-toggle-label input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: #0284C7;
+        cursor: pointer;
+    }
+    .telao-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        flex-grow: 1;
+        padding: 1rem 0;
+    }
+    .telao-course-title {
+        font-size: clamp(1.6rem, 3.5vw, 2.75rem);
+        font-weight: 700;
+        color: #FFFFFF;
+        margin: 0 0 0.5rem 0;
+        line-height: 1.2;
+    }
+    .telao-course-meta {
+        font-size: clamp(1rem, 1.8vw, 1.35rem);
+        color: #94A3B8;
+        margin-bottom: 1.5rem;
+    }
+    .telao-qr-card {
+        background: #FFFFFF;
+        padding: 1.25rem;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        display: inline-block;
+        margin-bottom: 1.25rem;
+    }
+    .telao-instructions {
+        font-size: clamp(1rem, 1.6vw, 1.25rem);
+        color: #E2E8F0;
+        font-weight: 500;
+        max-width: 680px;
+        line-height: 1.5;
+        margin-bottom: 0.75rem;
+    }
+    .telao-url-box {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1.25rem;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: clamp(0.85rem, 1.3vw, 1.05rem);
+        color: #38BDF8;
+        text-decoration: none;
+    }
+
+    /* Estilos das Solicitações de Correção (Ticket 12) */
+    .correction-card {
+        background: #FFFBEB;
+        border: 1.5px solid #FCD34D;
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        margin-bottom: 1.75rem;
+        box-shadow: var(--shadow-sm);
+    }
+    .correction-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .correction-badge {
+        background: #D97706;
+        color: #FFFFFF;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 9999px;
+    }
+    .correction-item {
+        background: #FFFFFF;
+        border: 1px solid #FDE68A;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 0.85rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .diff-old {
+        color: #991B1B;
+        text-decoration: line-through;
+        margin-right: 0.35rem;
+    }
+    .diff-new {
+        color: #047857;
+        font-weight: 700;
+    }
+    .btn-approve {
+        background: #059669;
+        color: #FFFFFF;
+        border: none;
+        padding: 0.45rem 0.9rem;
+        border-radius: 6px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        transition: background 0.15s;
+    }
+    .btn-approve:hover {
+        background: #047857;
+    }
+    .btn-reject {
+        background: #DC2626;
+        color: #FFFFFF;
+        border: none;
+        padding: 0.45rem 0.9rem;
+        border-radius: 6px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        transition: background 0.15s;
+    }
+    .btn-reject:hover {
+        background: #B91C1C;
+    }
+    .btn-edit-student {
+        background: #F1F5F9;
+        color: #334155;
+        border: 1px solid #CBD5E1;
+        padding: 0.3rem 0.65rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        transition: background 0.15s;
+    }
+    .btn-edit-student:hover {
+        background: #E2E8F0;
+        color: #0F172A;
+    }
+    .modal-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.6);
+        backdrop-filter: blur(4px);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+    }
+    .modal-backdrop.is-active {
+        display: flex;
+    }
+    .modal-dialog {
+        background: #FFFFFF;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 520px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        border: 1px solid #E2E8F0;
+        overflow: hidden;
+    }
 </style>
 
 <!-- Mensagem de Feedback -->
@@ -947,7 +1314,7 @@ ob_start();
             <span>✈ + Agendar Deslocamento</span>
         </button>
         <button type="button" class="btn-import-trigger" style="color: #0369A1; border-color: #7DD3FC;" onclick="document.getElementById('remarcarTurmaBox').classList.toggle('active');">
-            <span>🔄 Remarcar em Bloco</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: -2px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg><span>Remarcar em Bloco</span>
         </button>
     </div>
 
@@ -1034,12 +1401,17 @@ ob_start();
         </p>
     </div>
     <div class="sync-buttons">
+        <button type="button" class="btn-telao-trigger" onclick="abrirModoTelao()" title="Projetar QR Code da Turma no Telão">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span>Projetar no Telão (QR Code)</span>
+        </button>
         <button type="button" class="btn-export-excel" style="background: #25D366; box-shadow: 0 2px 4px rgba(37, 211, 102, 0.25);" onclick="copiarMensagemWhatsappTurma()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
             <span>Copiar Mensagem WhatsApp</span>
         </button>
         <button type="button" class="btn-import-trigger" style="color: #1D4ED8; border-color: #93C5FD;" onclick="document.getElementById('configChaveBox').classList.toggle('active');">
-            <span>⚙️ Gerenciar Chave & Certificados</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>Gerenciar Chave &amp; Certificados</span>
         </button>
     </div>
 
@@ -1703,6 +2075,93 @@ function copiarNfseTexto() {
     </table>
 </div>
 
+<!-- Card de Solicitações de Correção Cadastral Pendentes (Ticket 12) -->
+<?php if (!empty($pedidosCorrecao)): ?>
+    <div class="correction-card">
+        <div class="correction-card-header">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: #92400E;">
+                    Solicitações de Correção Cadastral Pendentes
+                </h3>
+                <span class="correction-badge"><?= count($pedidosCorrecao) ?></span>
+            </div>
+            <p style="margin: 0; font-size: 0.8125rem; color: #B45309;">
+                Alunos solicitaram ajustes nos dados cadastrais que constarão no certificado oficial.
+            </p>
+        </div>
+
+        <?php foreach ($pedidosCorrecao as $pc): ?>
+            <div class="correction-item">
+                <div style="flex: 1; min-width: 260px;">
+                    <div style="font-size: 0.875rem; font-weight: 700; color: var(--dark); margin-bottom: 0.35rem;">
+                        Aluno: <?= htmlspecialchars($pc['aluno_nome_atual'], ENT_QUOTES, 'UTF-8') ?>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem;">
+                        <?php if (!empty($pc['nome_proposto']) && $pc['nome_proposto'] !== $pc['aluno_nome_atual']): ?>
+                            <div>
+                                <span style="color: var(--text-muted);">Nome Proposto:</span>
+                                <span class="diff-old"><?= htmlspecialchars($pc['aluno_nome_atual'], ENT_QUOTES, 'UTF-8') ?></span>
+                                &rarr; <span class="diff-new"><?= htmlspecialchars($pc['nome_proposto'], ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($pc['cpf_proposto']) && $pc['cpf_proposto'] !== $pc['aluno_cpf_atual']): ?>
+                            <div>
+                                <span style="color: var(--text-muted);">CPF Proposto:</span>
+                                <span class="diff-old"><?= htmlspecialchars($pc['aluno_cpf_atual'] ?: 'Não informado', ENT_QUOTES, 'UTF-8') ?></span>
+                                &rarr; <span class="diff-new"><?= htmlspecialchars($pc['cpf_proposto'], ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($pc['telefone_proposto']) && $pc['telefone_proposto'] !== $pc['aluno_telefone_atual']): ?>
+                            <div>
+                                <span style="color: var(--text-muted);">Telefone/WhatsApp:</span>
+                                <span class="diff-old"><?= htmlspecialchars($pc['aluno_telefone_atual'] ?: 'Não informado', ENT_QUOTES, 'UTF-8') ?></span>
+                                &rarr; <span class="diff-new"><?= htmlspecialchars($pc['telefone_proposto'], ENT_QUOTES, 'UTF-8') ?></span>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($pc['motivo'])): ?>
+                            <div style="margin-top: 0.25rem; color: #475569; font-style: italic;">
+                                "<?= htmlspecialchars($pc['motivo'], ENT_QUOTES, 'UTF-8') ?>"
+                            </div>
+                        <?php endif; ?>
+                        
+                        <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.15rem;">
+                            Solicitado em: <?= date('d/m/Y \à\s H:i', strtotime($pc['created_at'])) ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="margin: 0;">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+                        <input type="hidden" name="action" value="resolver_correcao">
+                        <input type="hidden" name="request_id" value="<?= (int)$pc['id'] ?>">
+                        <input type="hidden" name="aprovar" value="1">
+                        <button type="submit" class="btn-approve" title="Aprovar e atualizar dados do aluno">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span>Aprovar e Atualizar</span>
+                        </button>
+                    </form>
+                    <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="margin: 0;">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+                        <input type="hidden" name="action" value="resolver_correcao">
+                        <input type="hidden" name="request_id" value="<?= (int)$pc['id'] ?>">
+                        <input type="hidden" name="aprovar" value="0">
+                        <button type="submit" class="btn-reject" title="Recusar alteração solicitada">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            <span>Recusar</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+<?php endif; ?>
+
 <!-- Tabela de Alunos Matriculados -->
 <div class="table-container">
     <div class="table-header-bar">
@@ -1717,6 +2176,7 @@ function copiarNfseTexto() {
                 <th style="text-align: center;">Presenças / Total</th>
                 <th style="text-align: center;">Frequência Acumulada</th>
                 <th style="text-align: center;">Condição</th>
+                <th style="text-align: right;">Ações</th>
             </tr>
         </thead>
         <tbody>
@@ -1732,7 +2192,12 @@ function copiarNfseTexto() {
             ?>
                 <tr>
                     <td style="color: var(--text-muted); font-weight: 600;"><?= $aIndex++ ?></td>
-                    <td style="font-weight: 700;"><?= htmlspecialchars($a['nome_completo'], ENT_QUOTES, 'UTF-8') ?></td>
+                    <td style="font-weight: 700;">
+                        <div><?= htmlspecialchars($a['nome_completo'], ENT_QUOTES, 'UTF-8') ?></div>
+                        <?php if (!empty($a['email'])): ?>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;"><?= htmlspecialchars($a['email'], ENT_QUOTES, 'UTF-8') ?></div>
+                        <?php endif; ?>
+                    </td>
                     <td style="font-family: monospace; font-size: 0.8125rem;"><?= htmlspecialchars($a['cpf_mascarado'] ?: '—', ENT_QUOTES, 'UTF-8') ?></td>
                     <td style="text-align: center;"><?= $stats['total_presencas'] ?> / <?= $stats['total_aulas_realizadas'] ?></td>
                     <td style="text-align: center; font-weight: 700;">
@@ -1745,11 +2210,227 @@ function copiarNfseTexto() {
                             <span class="badge-safe">Apto</span>
                         <?php endif; ?>
                     </td>
+                    <td style="text-align: right;">
+                        <button type="button" class="btn-edit-student" onclick='abrirModalEditarAluno(<?= json_encode([
+                            'id' => (int)$a['id'],
+                            'nome' => $a['nome_completo'],
+                            'cpf' => $a['cpf'] ?? '',
+                            'email' => $a['email'] ?? '',
+                            'telefone' => $a['telefone'] ?? '',
+                        ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            <span>Editar</span>
+                        </button>
+                    </td>
                 </tr>
             <?php endforeach; ?>
         </tbody>
     </table>
 </div>
+
+<!-- Modal de Edição Direta de Aluno (Ticket 12) -->
+<div id="modalEditarAluno" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalEditarAlunoTitle">
+    <div class="modal-dialog">
+        <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="action" value="update_aluno">
+            <input type="hidden" id="editAlunoId" name="aluno_id" value="">
+
+            <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center;">
+                <h3 id="modalEditarAlunoTitle" style="margin: 0; font-size: 1.125rem; font-weight: 700; color: #0F172A; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    <span>Editar Dados do Aluno</span>
+                </h3>
+                <button type="button" onclick="fecharModalEditarAluno()" style="background: none; border: none; font-size: 1.25rem; color: #64748B; cursor: pointer;">&times;</button>
+            </div>
+
+            <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: #334155; margin-bottom: 0.25rem;">Nome Completo (Certificado):</label>
+                    <input type="text" id="editAlunoNome" name="nome_completo" required style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 0.875rem;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: #334155; margin-bottom: 0.25rem;">CPF:</label>
+                    <input type="text" id="editAlunoCpf" name="cpf" placeholder="000.000.000-00" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 0.875rem;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: #334155; margin-bottom: 0.25rem;">E-mail:</label>
+                    <input type="email" id="editAlunoEmail" name="email" placeholder="aluno@email.com" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 0.875rem;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: #334155; margin-bottom: 0.25rem;">Telefone / WhatsApp:</label>
+                    <input type="text" id="editAlunoTelefone" name="telefone" placeholder="(00) 00000-0000" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 0.875rem;">
+                </div>
+                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 0.75rem; font-size: 0.75rem; color: #64748B;">
+                    <strong>Sincronização Retroativa:</strong> Qualquer alteração feita aqui atualiza o aluno imediatamente e sincroniza com os certificados já emitidos desta turma.
+                </div>
+            </div>
+
+            <div style="padding: 1rem 1.5rem; background: #F8FAFC; border-top: 1px solid #E2E8F0; display: flex; justify-content: flex-end; gap: 0.75rem;">
+                <button type="button" onclick="fecharModalEditarAluno()" style="padding: 0.5rem 1rem; border: 1px solid #CBD5E1; background: #FFFFFF; border-radius: 6px; font-size: 0.875rem; font-weight: 600; cursor: pointer; color: #334155;">Cancelar</button>
+                <button type="submit" class="btn-approve" style="padding: 0.5rem 1.25rem; font-size: 0.875rem;">Salvar Alterações</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal / Overlay de Apresentação no Telão (Ticket 12) -->
+<div id="modalTelao" class="telao-overlay" role="dialog" aria-modal="true" aria-label="Modo Telão">
+    <div class="telao-top-bar">
+        <div class="telao-brand">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span>FUTURO FÁCIL &bull; MODO TELÃO</span>
+        </div>
+        <div class="telao-actions">
+            <button type="button" class="btn-telao-action" onclick="toggleFullscreenTelao()" id="btnFullscreenTelao">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                <span>Tela Cheia</span>
+            </button>
+            <button type="button" class="btn-telao-action" onclick="fecharModoTelao()" title="Fechar Telão (Esc)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <span>Fechar</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Barra de Toggles Interativos do Instrutor -->
+    <div class="telao-toggles-bar">
+        <label class="telao-toggle-label">
+            <input type="checkbox" id="telaoChkCpf" checked onchange="atualizarTelaoQr()">
+            <span>Coletar CPF (Certificado)</span>
+        </label>
+        <label class="telao-toggle-label">
+            <input type="checkbox" id="telaoChkWpp" checked onchange="atualizarTelaoQr()">
+            <span>Coletar WhatsApp</span>
+        </label>
+        <?php if ($encontroHojeId > 0): ?>
+        <label class="telao-toggle-label">
+            <input type="checkbox" id="telaoChkPresenca" checked onchange="atualizarTelaoQr()">
+            <span>Registrar Presença Automática</span>
+        </label>
+        <?php endif; ?>
+    </div>
+
+    <div class="telao-content">
+        <h2 class="telao-course-title"><?= htmlspecialchars($turma['curso_nome'], ENT_QUOTES, 'UTF-8') ?></h2>
+        <div class="telao-course-meta">
+            <?= htmlspecialchars($turma['codigo_turma'], ENT_QUOTES, 'UTF-8') ?> &bull; <?= htmlspecialchars($turma['cliente_nome'] ?? 'Futuro Fácil', ENT_QUOTES, 'UTF-8') ?>
+        </div>
+
+        <div class="telao-qr-card" id="telaoQrCard">
+            <div id="telaoQrContainer">
+                <?= $initialQrSvg ?>
+            </div>
+        </div>
+
+        <div class="telao-instructions">
+            Aponte a câmera do seu celular para o QR Code acima para acessar os materiais da turma<?= $encontroHojeId > 0 ? ' e registrar sua presença' : '' ?>.
+        </div>
+
+        <div>
+            <a href="<?= htmlspecialchars($initialQrUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" class="telao-url-box" id="telaoUrlLink">
+                <span id="telaoUrlText"><?= htmlspecialchars($initialQrUrl, ENT_QUOTES, 'UTF-8') ?></span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Funções do Modal de Edição de Aluno
+    function abrirModalEditarAluno(aluno) {
+        document.getElementById('editAlunoId').value = aluno.id || '';
+        document.getElementById('editAlunoNome').value = aluno.nome || '';
+        document.getElementById('editAlunoCpf').value = aluno.cpf || '';
+        document.getElementById('editAlunoEmail').value = aluno.email || '';
+        document.getElementById('editAlunoTelefone').value = aluno.telefone || '';
+        document.getElementById('modalEditarAluno').classList.add('is-active');
+    }
+
+    function fecharModalEditarAluno() {
+        document.getElementById('modalEditarAluno').classList.remove('is-active');
+    }
+
+    // Funções do Modo Telão
+    const TELAO_BASE_URL = <?= json_encode($baseUrl, JSON_UNESCAPED_SLASHES) ?>;
+    const TELAO_TURMA_SLUG = <?= json_encode($turmaSlug) ?>;
+    const TELAO_ENCONTRO_ID = <?= (int)$encontroHojeId ?>;
+
+    window.abrirModoTelao = function() {
+        const modal = document.getElementById('modalTelao');
+        if (modal) {
+            modal.classList.add('is-active');
+            document.body.style.overflow = 'hidden';
+            atualizarTelaoQr();
+        }
+    };
+
+    window.fecharModoTelao = function() {
+        const modal = document.getElementById('modalTelao');
+        if (modal) {
+            modal.classList.remove('is-active');
+            document.body.style.overflow = '';
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+            }
+        }
+    };
+
+    window.toggleFullscreenTelao = function() {
+        const modal = document.getElementById('modalTelao');
+        if (!document.fullscreenElement) {
+            if (modal.requestFullscreen) {
+                modal.requestFullscreen();
+            } else if (modal.webkitRequestFullscreen) {
+                modal.webkitRequestFullscreen();
+            }
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        }
+    };
+
+    window.atualizarTelaoQr = function() {
+        const chkCpf = document.getElementById('telaoChkCpf');
+        const chkWpp = document.getElementById('telaoChkWpp');
+        const chkPresenca = document.getElementById('telaoChkPresenca');
+
+        const coletarCpf = chkCpf ? (chkCpf.checked ? '1' : '0') : '1';
+        const coletarWpp = chkWpp ? (chkWpp.checked ? '1' : '0') : '1';
+        const regPresenca = (chkPresenca && chkPresenca.checked && TELAO_ENCONTRO_ID > 0) ? ('&encontro_id=' + TELAO_ENCONTRO_ID) : '';
+
+        const targetUrl = TELAO_BASE_URL + '/turmas/entrar?turma=' + encodeURIComponent(TELAO_TURMA_SLUG) +
+                          '&cpf=' + coletarCpf +
+                          '&wpp=' + coletarWpp +
+                          regPresenca;
+
+        const urlText = document.getElementById('telaoUrlText');
+        const urlLink = document.getElementById('telaoUrlLink');
+        if (urlText) urlText.textContent = targetUrl;
+        if (urlLink) urlLink.href = targetUrl;
+
+        // Atualiza QR code SVG via endpoint seguro /diario/qrcode
+        const container = document.getElementById('telaoQrContainer');
+        if (container) {
+            fetch('/diario/qrcode?url=' + encodeURIComponent(targetUrl) + '&size=360')
+                .then(r => r.text())
+                .then(svgContent => {
+                    if (svgContent && svgContent.includes('<svg')) {
+                        container.innerHTML = svgContent;
+                    }
+                })
+                .catch(() => {});
+        }
+    };
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            fecharModoTelao();
+            fecharModalEditarAluno();
+        }
+    });
+</script>
 
 <?php
 $contentHtml = ob_get_clean();

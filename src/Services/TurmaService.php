@@ -10,8 +10,10 @@ namespace FuturoFacil\Services;
 
 require_once __DIR__ . '/../Config/Database.php';
 require_once __DIR__ . '/CalendarService.php';
+require_once __DIR__ . '/ValidatorService.php';
 
 use FuturoFacil\Config\Database;
+use FuturoFacil\Services\ValidatorService;
 use InvalidArgumentException;
 use PDO;
 use RuntimeException;
@@ -125,7 +127,92 @@ class TurmaService
                 }
             }
         } catch (Throwable) {
-            // Ignora se coluna já existir ou falha não impeditiva
+            // Ignora falhas não impeditivas
+        }
+
+        // 3. Tabela alunos (email e telefone)
+        try {
+            if ($driver === 'sqlite') {
+                $colsAlunos = $this->pdo->query("PRAGMA table_info(alunos)")->fetchAll(PDO::FETCH_ASSOC);
+                $namesAlunos = array_column($colsAlunos, 'name');
+                if (!in_array('email', $namesAlunos, true)) {
+                    $this->pdo->exec("ALTER TABLE alunos ADD COLUMN email TEXT NULL DEFAULT NULL");
+                    $this->pdo->exec("CREATE INDEX IF NOT EXISTS idx_alunos_email ON alunos(email)");
+                }
+                if (!in_array('telefone', $namesAlunos, true)) {
+                    $this->pdo->exec("ALTER TABLE alunos ADD COLUMN telefone TEXT NULL DEFAULT NULL");
+                }
+            } else {
+                $checkEmail = $this->pdo->query("
+                    SELECT COLUMN_NAME 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                      AND TABLE_NAME = 'alunos' 
+                      AND COLUMN_NAME = 'email'
+                ")->fetchColumn();
+                if (!$checkEmail) {
+                    $this->pdo->exec("ALTER TABLE `alunos` ADD COLUMN `email` VARCHAR(255) NULL AFTER `nome_completo`");
+                    $this->pdo->exec("CREATE INDEX `idx_alunos_email` ON `alunos` (`email`)");
+                }
+
+                $checkTel = $this->pdo->query("
+                    SELECT COLUMN_NAME 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                      AND TABLE_NAME = 'alunos' 
+                      AND COLUMN_NAME = 'telefone'
+                ")->fetchColumn();
+                if (!$checkTel) {
+                    $this->pdo->exec("ALTER TABLE `alunos` ADD COLUMN `telefone` VARCHAR(20) NULL AFTER `email`");
+                }
+            }
+        } catch (Throwable) {
+            // Ignora falhas não impeditivas
+        }
+
+        // 4. Tabela solicitacoes_correcao_aluno
+        try {
+            if ($driver === 'sqlite') {
+                $this->pdo->exec("
+                    CREATE TABLE IF NOT EXISTS solicitacoes_correcao_aluno (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        turma_id INTEGER NOT NULL,
+                        aluno_id INTEGER NOT NULL,
+                        nome_proposto TEXT NULL,
+                        cpf_proposto TEXT NULL,
+                        email_proposto TEXT NULL,
+                        telefone_proposto TEXT NULL,
+                        motivo TEXT NULL,
+                        status TEXT NOT NULL DEFAULT 'pendente',
+                        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        resolved_at TEXT NULL DEFAULT NULL,
+                        FOREIGN KEY (turma_id) REFERENCES turmas (id) ON DELETE CASCADE,
+                        FOREIGN KEY (aluno_id) REFERENCES alunos (id) ON DELETE CASCADE
+                    )
+                ");
+                $this->pdo->exec("CREATE INDEX IF NOT EXISTS idx_solic_turma_status ON solicitacoes_correcao_aluno(turma_id, status)");
+            } else {
+                $this->pdo->exec("
+                    CREATE TABLE IF NOT EXISTS `solicitacoes_correcao_aluno` (
+                        `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        `turma_id` INT UNSIGNED NOT NULL,
+                        `aluno_id` INT UNSIGNED NOT NULL,
+                        `nome_proposto` VARCHAR(255) NULL,
+                        `cpf_proposto` VARCHAR(20) NULL,
+                        `email_proposto` VARCHAR(255) NULL,
+                        `telefone_proposto` VARCHAR(20) NULL,
+                        `motivo` TEXT NULL,
+                        `status` ENUM('pendente', 'aprovada', 'rejeitada') NOT NULL DEFAULT 'pendente',
+                        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        `resolved_at` DATETIME NULL DEFAULT NULL,
+                        CONSTRAINT `fk_solic_turma` FOREIGN KEY (`turma_id`) REFERENCES `turmas` (`id`) ON DELETE CASCADE,
+                        CONSTRAINT `fk_solic_aluno` FOREIGN KEY (`aluno_id`) REFERENCES `alunos` (`id`) ON DELETE CASCADE,
+                        INDEX `idx_solic_turma_status` (`turma_id`, `status`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ");
+            }
+        } catch (Throwable) {
+            // Ignora falhas não impeditivas
         }
 
         self::$schemaEnsured = true;
@@ -969,6 +1056,385 @@ class TurmaService
         }
 
         return $count;
+    }
+
+    public function findAlunoById(int $alunoId): ?array
+    {
+        $this->ensureSchema();
+        $stmt = $this->pdo->prepare("SELECT * FROM alunos WHERE id = ?");
+        $stmt->execute([$alunoId]);
+        $res = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $res ?: null;
+    }
+
+    public function findAlunoByEmail(int $turmaId, string $email): ?array
+    {
+        $this->ensureSchema();
+        $emailClean = strtolower(trim($email));
+        if (empty($emailClean)) {
+            return null;
+        }
+        $stmt = $this->pdo->prepare("SELECT * FROM alunos WHERE turma_id = ? AND LOWER(TRIM(email)) = ? LIMIT 1");
+        $stmt->execute([$turmaId, $emailClean]);
+        $res = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $res ?: null;
+    }
+
+    public function reconcileOrRegisterStudent(
+        int $turmaId,
+        string $nome,
+        string $email,
+        ?string $cpf = null,
+        ?string $telefone = null,
+        ?int $encontroIdPresenca = null
+    ): array {
+        $this->ensureSchema();
+
+        $nome = trim(preg_replace('/\s+/', ' ', $nome) ?? '');
+        $email = strtolower(trim($email));
+        $cpfLimpo = !empty($cpf) ? ValidatorService::cleanCpf($cpf) : null;
+        $cpfFormatado = ($cpfLimpo && strlen($cpfLimpo) === 11) ? ValidatorService::formatCpf($cpfLimpo) : null;
+        $cpfMascarado = ($cpfLimpo && strlen($cpfLimpo) === 11) ? ValidatorService::maskCpf($cpfLimpo) : null;
+        $telefone = !empty($telefone) ? trim($telefone) : null;
+
+        if (empty($nome)) {
+            throw new InvalidArgumentException("O nome do aluno é obrigatório.");
+        }
+        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new InvalidArgumentException("E-mail do aluno inválido.");
+        }
+
+        // Validação matemática estrita de CPF se fornecido
+        if (!empty($cpfLimpo)) {
+            if (!ValidatorService::validateCpf($cpfLimpo)) {
+                throw new InvalidArgumentException("O CPF informado é inválido.");
+            }
+        }
+
+        // Reconciliação Inteligente em Cascata
+        $matchedAluno = null;
+
+        // 1. Match por CPF (se preenchido)
+        if (!empty($cpfLimpo)) {
+            $stmtCpf = $this->pdo->prepare("SELECT * FROM alunos WHERE turma_id = ? AND cpf_limpo = ? LIMIT 1");
+            $stmtCpf->execute([$turmaId, $cpfLimpo]);
+            $matchedAluno = $stmtCpf->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        // 2. Match por E-mail
+        if (!$matchedAluno) {
+            $stmtEmail = $this->pdo->prepare("SELECT * FROM alunos WHERE turma_id = ? AND LOWER(TRIM(email)) = ? LIMIT 1");
+            $stmtEmail->execute([$turmaId, $email]);
+            $matchedAluno = $stmtEmail->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        // 3. Match por Nome Completo exato
+        if (!$matchedAluno) {
+            $stmtNome = $this->pdo->prepare("SELECT * FROM alunos WHERE turma_id = ? AND LOWER(TRIM(nome_completo)) = ? LIMIT 1");
+            $stmtNome->execute([$turmaId, mb_strtolower($nome, 'UTF-8')]);
+            $matchedAluno = $stmtNome->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $alunoId = 0;
+        $isNew = false;
+        $action = 'none';
+
+        if ($matchedAluno) {
+            $alunoId = (int)$matchedAluno['id'];
+            $updates = [];
+            $params = [];
+
+            // Se o e-mail não existia ou é diferente, atualiza
+            if (empty($matchedAluno['email'])) {
+                $updates[] = "email = ?";
+                $params[] = $email;
+            }
+
+            // Se forneceu CPF e o aluno não tinha
+            if (!empty($cpfLimpo) && empty($matchedAluno['cpf_limpo'])) {
+                $updates[] = "cpf = ?";
+                $params[] = $cpfFormatado;
+                $updates[] = "cpf_limpo = ?";
+                $params[] = $cpfLimpo;
+                $updates[] = "cpf_mascarado = ?";
+                $params[] = $cpfMascarado;
+            }
+
+            // Se forneceu telefone e o aluno não tinha
+            if (!empty($telefone) && empty($matchedAluno['telefone'])) {
+                $updates[] = "telefone = ?";
+                $params[] = $telefone;
+            }
+
+            // Se o match foi por CPF e o nome digitado tem mais detalhes
+            if (!empty($nome) && $matchedAluno['nome_completo'] !== $nome && !empty($cpfLimpo) && $matchedAluno['cpf_limpo'] === $cpfLimpo) {
+                $updates[] = "nome_completo = ?";
+                $params[] = $nome;
+            }
+
+            if (!empty($updates)) {
+                $updates[] = "updated_at = ?";
+                $params[] = $now;
+                $params[] = $alunoId;
+                $sqlUp = "UPDATE alunos SET " . implode(", ", $updates) . " WHERE id = ?";
+                $stmtUp = $this->pdo->prepare($sqlUp);
+                $stmtUp->execute($params);
+                $action = 'updated';
+            } else {
+                $action = 'matched';
+            }
+        } else {
+            // Novo aluno regular na turma
+            $stmtIns = $this->pdo->prepare("
+                INSERT INTO alunos (turma_id, nome_completo, cpf, cpf_limpo, cpf_mascarado, email, telefone, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmtIns->execute([
+                $turmaId,
+                $nome,
+                $cpfFormatado,
+                $cpfLimpo,
+                $cpfMascarado,
+                $email,
+                $telefone,
+                $now,
+                $now,
+            ]);
+            $alunoId = (int)$this->pdo->lastInsertId();
+            $isNew = true;
+            $action = 'created';
+        }
+
+        // Frequência automática se solicitada
+        $presencaRegistrada = false;
+        if ($encontroIdPresenca !== null && $encontroIdPresenca > 0) {
+            $stmtCheckEnc = $this->pdo->prepare("SELECT id FROM encontros WHERE id = ? AND turma_id = ? AND tipo = 'aula' LIMIT 1");
+            $stmtCheckEnc->execute([$encontroIdPresenca, $turmaId]);
+            if ($stmtCheckEnc->fetch()) {
+                $stmtFreqCheck = $this->pdo->prepare("SELECT id FROM frequencias WHERE encontro_id = ? AND aluno_id = ? LIMIT 1");
+                $stmtFreqCheck->execute([$encontroIdPresenca, $alunoId]);
+                $freqId = $stmtFreqCheck->fetchColumn();
+                if ($freqId) {
+                    $this->pdo->prepare("UPDATE frequencias SET presente = 1, updated_at = ? WHERE id = ?")->execute([$now, $freqId]);
+                } else {
+                    $this->pdo->prepare("INSERT INTO frequencias (encontro_id, aluno_id, presente, created_at, updated_at) VALUES (?, ?, 1, ?, ?)")->execute([$encontroIdPresenca, $alunoId, $now, $now]);
+                }
+                $presencaRegistrada = true;
+            }
+        }
+
+        $alunoFinal = $this->findAlunoById($alunoId);
+
+        return [
+            'aluno_id'            => $alunoId,
+            'aluno'               => $alunoFinal,
+            'is_new'              => $isNew,
+            'action'              => $action,
+            'presenca_registrada' => $presencaRegistrada,
+        ];
+    }
+
+    public function updateAluno(
+        int $alunoId,
+        string|array $nome,
+        ?string $cpf = null,
+        ?string $email = null,
+        ?string $telefone = null,
+        bool $syncCertificados = true
+    ): bool {
+        $this->ensureSchema();
+
+        if (is_array($nome)) {
+            $data = $nome;
+            $nome = (string)($data['nome_completo'] ?? $data['nome'] ?? '');
+            $cpf = isset($data['cpf']) ? (string)$data['cpf'] : null;
+            $email = isset($data['email']) ? (string)$data['email'] : null;
+            $telefone = isset($data['telefone']) ? (string)$data['telefone'] : null;
+            $syncCertificados = $data['sync_certificados'] ?? true;
+        }
+
+        $alunoAtual = $this->findAlunoById($alunoId);
+        if (!$alunoAtual) {
+            return false;
+        }
+
+        $nome = trim(preg_replace('/\s+/', ' ', $nome) ?? '');
+        if (empty($nome)) {
+            throw new InvalidArgumentException("O nome do aluno não pode ser vazio.");
+        }
+
+        $emailClean = !empty($email) ? strtolower(trim($email)) : null;
+        if ($emailClean && !filter_var($emailClean, FILTER_VALIDATE_EMAIL)) {
+            throw new InvalidArgumentException("E-mail informado é inválido.");
+        }
+
+        $cpfLimpo = !empty($cpf) ? ValidatorService::cleanCpf($cpf) : null;
+        $cpfFormatado = null;
+        $cpfMascarado = null;
+        if (!empty($cpfLimpo)) {
+            if (!ValidatorService::validateCpf($cpfLimpo)) {
+                throw new InvalidArgumentException("CPF informado é inválido.");
+            }
+            $cpfFormatado = ValidatorService::formatCpf($cpfLimpo);
+            $cpfMascarado = ValidatorService::maskCpf($cpfLimpo);
+        }
+
+        $telefoneClean = !empty($telefone) ? trim($telefone) : null;
+        $now = date('Y-m-d H:i:s');
+
+        $stmt = $this->pdo->prepare("
+            UPDATE alunos 
+            SET nome_completo = ?, cpf = ?, cpf_limpo = ?, cpf_mascarado = ?, email = ?, telefone = ?, updated_at = ?
+            WHERE id = ?
+        ");
+        $success = $stmt->execute([
+            $nome,
+            $cpfFormatado,
+            $cpfLimpo,
+            $cpfMascarado,
+            $emailClean,
+            $telefoneClean,
+            $now,
+            $alunoId,
+        ]);
+
+        // Sincronização retroativa com Livro Digital de Certificados
+        if ($success && $syncCertificados) {
+            $turmaId = (int)$alunoAtual['turma_id'];
+            $oldCpfLimpo = $alunoAtual['cpf_limpo'];
+            $oldNome = $alunoAtual['nome_completo'];
+
+            $stmtSync = $this->pdo->prepare("
+                UPDATE registros_certificados 
+                SET aluno_nome = ?,
+                    aluno_cpf = COALESCE(?, aluno_cpf),
+                    aluno_cpf_mascarado = COALESCE(?, aluno_cpf_mascarado)
+                WHERE turma_id = ? 
+                  AND (aluno_cpf = ? OR aluno_cpf = ? OR aluno_nome = ?)
+            ");
+            $stmtSync->execute([
+                $nome,
+                $cpfFormatado,
+                $cpfMascarado,
+                $turmaId,
+                $alunoAtual['cpf'],
+                $oldCpfLimpo,
+                $oldNome,
+            ]);
+        }
+
+        return $success;
+    }
+
+    public function createCorrectionRequest(
+        int $turmaId,
+        int $alunoId,
+        array|string $dadosPropostos,
+        ?string $cpfOuMotivo = null,
+        ?string $telefone = null,
+        ?string $motivo = null
+    ): int {
+        $this->ensureSchema();
+
+        $aluno = $this->findAlunoById($alunoId);
+        if (!$aluno || (int)$aluno['turma_id'] !== $turmaId) {
+            throw new InvalidArgumentException("Aluno inválido para esta turma.");
+        }
+
+        if (is_array($dadosPropostos)) {
+            $nome = isset($dadosPropostos['nome_completo']) ? trim((string)$dadosPropostos['nome_completo']) : (isset($dadosPropostos['nome']) ? trim((string)$dadosPropostos['nome']) : null);
+            $cpf = isset($dadosPropostos['cpf']) ? trim((string)$dadosPropostos['cpf']) : null;
+            $email = isset($dadosPropostos['email']) ? trim((string)$dadosPropostos['email']) : null;
+            $telefone = isset($dadosPropostos['telefone']) ? trim((string)$dadosPropostos['telefone']) : null;
+            $motivo = !empty($cpfOuMotivo) ? trim($cpfOuMotivo) : (!empty($dadosPropostos['motivo']) ? trim((string)$dadosPropostos['motivo']) : null);
+        } else {
+            $nome = !empty($dadosPropostos) ? trim((string)$dadosPropostos) : null;
+            $cpf = !empty($cpfOuMotivo) ? trim((string)$cpfOuMotivo) : null;
+            $email = null;
+            $telefone = !empty($telefone) ? trim((string)$telefone) : null;
+            $motivo = !empty($motivo) ? trim((string)$motivo) : null;
+        }
+
+        if ($cpf) {
+            $cpfLimpo = ValidatorService::cleanCpf($cpf);
+            if (!ValidatorService::validateCpf($cpfLimpo)) {
+                throw new InvalidArgumentException("O CPF proposto para correção é inválido.");
+            }
+            $cpf = ValidatorService::formatCpf($cpfLimpo);
+        }
+
+        $stmt = $this->pdo->prepare("
+            INSERT INTO solicitacoes_correcao_aluno 
+            (turma_id, aluno_id, nome_proposto, cpf_proposto, email_proposto, telefone_proposto, motivo, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente', ?)
+        ");
+        $stmt->execute([
+            $turmaId,
+            $alunoId,
+            $nome,
+            $cpf,
+            $email,
+            $telefone,
+            $motivo,
+            date('Y-m-d H:i:s'),
+        ]);
+
+        return (int)$this->pdo->lastInsertId();
+    }
+
+    public function getPendingCorrectionRequests(int $turmaId): array
+    {
+        $this->ensureSchema();
+
+        $stmt = $this->pdo->prepare("
+            SELECT s.*, 
+                   a.nome_completo AS aluno_nome_atual,
+                   a.cpf AS aluno_cpf_atual,
+                   a.cpf_mascarado AS aluno_cpf_mascarado_atual,
+                   a.email AS aluno_email_atual,
+                   a.telefone AS aluno_telefone_atual
+            FROM solicitacoes_correcao_aluno s
+            JOIN alunos a ON a.id = s.aluno_id
+            WHERE s.turma_id = ? AND s.status = 'pendente'
+            ORDER BY s.id ASC
+        ");
+        $stmt->execute([$turmaId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function resolveCorrectionRequest(int $requestId, bool $approve, ?string $respostaAdmin = null): bool
+    {
+        $this->ensureSchema();
+
+        $stmt = $this->pdo->prepare("SELECT * FROM solicitacoes_correcao_aluno WHERE id = ? LIMIT 1");
+        $stmt->execute([$requestId]);
+        $req = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$req || $req['status'] !== 'pendente') {
+            return false;
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        if ($approve) {
+            $aluno = $this->findAlunoById((int)$req['aluno_id']);
+            if (!$aluno) {
+                return false;
+            }
+
+            $nomeNovo = !empty($req['nome_proposto']) ? $req['nome_proposto'] : $aluno['nome_completo'];
+            $cpfNovo = !empty($req['cpf_proposto']) ? $req['cpf_proposto'] : $aluno['cpf'];
+            $emailNovo = !empty($req['email_proposto']) ? $req['email_proposto'] : $aluno['email'];
+            $telefoneNovo = !empty($req['telefone_proposto']) ? $req['telefone_proposto'] : $aluno['telefone'];
+
+            $this->updateAluno((int)$req['aluno_id'], $nomeNovo, $cpfNovo, $emailNovo, $telefoneNovo, true);
+
+            $stmtUp = $this->pdo->prepare("UPDATE solicitacoes_correcao_aluno SET status = 'aprovada', resolved_at = ? WHERE id = ?");
+            return $stmtUp->execute([$now, $requestId]);
+        } else {
+            $stmtUp = $this->pdo->prepare("UPDATE solicitacoes_correcao_aluno SET status = 'rejeitada', resolved_at = ? WHERE id = ?");
+            return $stmtUp->execute([$now, $requestId]);
+        }
     }
 }
 

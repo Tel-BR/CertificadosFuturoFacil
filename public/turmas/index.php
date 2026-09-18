@@ -26,11 +26,15 @@ require_once __DIR__ . '/../../src/Config/Database.php';
 require_once __DIR__ . '/../../src/Services/AuthService.php';
 require_once __DIR__ . '/../../src/Services/MaterialService.php';
 require_once __DIR__ . '/../../src/Services/TurnstileService.php';
+require_once __DIR__ . '/../../src/Services/CalendarService.php';
+require_once __DIR__ . '/../../src/Services/TurmaService.php';
 
 use FuturoFacil\Config\Database;
 use FuturoFacil\Services\AuthService;
 use FuturoFacil\Services\MaterialService;
 use FuturoFacil\Services\TurnstileService;
+use FuturoFacil\Services\CalendarService;
+use FuturoFacil\Services\TurmaService;
 
 AuthService::startSecureSession();
 
@@ -38,6 +42,8 @@ $pdo = Database::getConnection();
 $authService = new AuthService($pdo);
 $materialService = new MaterialService($pdo);
 $turnstileService = new TurnstileService();
+$calendarService = new CalendarService($pdo);
+$turmaService = new TurmaService($pdo, $calendarService);
 
 $studentFailedAttempts = (int)($_SESSION['student_failed_attempts'] ?? 0);
 $requiresTurnstile = TurnstileService::isRequiredForStudent($studentFailedAttempts);
@@ -202,6 +208,58 @@ if ($isAlunoLogado && $turma && ($turma['portal_certificados_modo'] ?? 'nenhum')
             ];
         }
     }
+}
+
+// -------------------------------------------------------------
+// 5. Solicitação de Correção Cadastral pelo Aluno (Ticket 12)
+// -------------------------------------------------------------
+$correcaoFeedback = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'solicitar_correcao') {
+    if (!$isAlunoLogado || empty($alunoData['aluno_id'])) {
+        $correcaoFeedback = [
+            'tipo' => 'danger',
+            'msg'  => 'Para solicitar correção cadastral, é necessário estar identificado como aluno da turma.',
+        ];
+    } else {
+        $alunoId = (int)$alunoData['aluno_id'];
+        $nomeProp = trim((string)($_POST['nome_completo'] ?? ''));
+        $cpfProp = trim((string)($_POST['cpf'] ?? ''));
+        $telProp = trim((string)($_POST['telefone'] ?? ''));
+        $motivoProp = trim((string)($_POST['motivo'] ?? ''));
+
+        if (empty($nomeProp) && empty($cpfProp) && empty($telProp)) {
+            $correcaoFeedback = [
+                'tipo' => 'danger',
+                'msg'  => 'Por favor, preencha ao menos um campo para alteração.',
+            ];
+        } else {
+            try {
+                $turmaService->createCorrectionRequest(
+                    (int)$turma['id'],
+                    $alunoId,
+                    $nomeProp ?: null,
+                    $cpfProp ?: null,
+                    $telProp ?: null,
+                    $motivoProp ?: null
+                );
+                $correcaoFeedback = [
+                    'tipo' => 'success',
+                    'msg'  => 'Sua solicitação de correção foi enviada com sucesso! O instrutor revisará e atualizará os dados no diário de classe.',
+                ];
+            } catch (Throwable $e) {
+                $correcaoFeedback = [
+                    'tipo' => 'danger',
+                    'msg'  => 'Erro ao registrar solicitação de correção: ' . $e->getMessage(),
+                ];
+            }
+        }
+    }
+}
+
+// Carrega perfil atualizado do aluno logado
+$alunoPerfil = null;
+if ($isAlunoLogado && !empty($alunoData['aluno_id'])) {
+    $alunoPerfil = $turmaService->findAlunoById((int)$alunoData['aluno_id']);
 }
 
 // Materiais categorizados da turma ativa
@@ -765,6 +823,85 @@ $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappMsg}";
       justify-content: center;
     }
   }
+
+  /* Card do Perfil do Aluno e Solicitação de Correção (Ticket 12) */
+  .student-profile-card {
+    background: #FFFFFF;
+    border: 1px solid var(--gray-line);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  }
+  .student-profile-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--cyan-deep);
+    margin-bottom: 0.35rem;
+  }
+  .student-profile-name {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .student-profile-meta {
+    font-size: 0.8125rem;
+    color: var(--ink-soft);
+    margin-top: 0.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .btn-request-correction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #FFFFFF;
+    border: 1px solid var(--cyan);
+    color: var(--cyan-deep);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    padding: 0.55rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-request-correction:hover {
+    background: var(--cyan-soft);
+  }
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(27, 25, 24, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .modal-overlay.is-active {
+    display: flex;
+  }
+  .modal-box {
+    background: #FFFFFF;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 520px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    border: 1px solid var(--gray-line);
+  }
 </style>
 </head>
 <body>
@@ -886,13 +1023,56 @@ $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappMsg}";
     </div>
   </div>
 
+  <?php if ($correcaoFeedback): ?>
+    <div style="padding: 0.85rem 1.15rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.875rem; font-weight: 600; background: <?= $correcaoFeedback['tipo'] === 'success' ? '#DCFCE7' : '#FEE2E2' ?>; color: <?= $correcaoFeedback['tipo'] === 'success' ? '#166534' : '#991B1B' ?>; border: 1px solid <?= $correcaoFeedback['tipo'] === 'success' ? '#86EFAC' : '#FCA5A5' ?>;">
+      <?= htmlspecialchars($correcaoFeedback['msg'], ENT_QUOTES, 'UTF-8') ?>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($isAlunoLogado && !empty($alunoPerfil)): ?>
+    <!-- Card de Identificação Cadastral do Aluno e Correção (Ticket 12) -->
+    <div class="student-profile-card">
+      <div class="student-profile-info">
+        <div class="student-profile-badge">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span>Identificação Cadastral para Certificado</span>
+        </div>
+        <div class="student-profile-name">
+          <?= htmlspecialchars($alunoPerfil['nome_completo'], ENT_QUOTES, 'UTF-8') ?>
+        </div>
+        <div class="student-profile-meta">
+          <span>CPF: <strong><?= htmlspecialchars($alunoPerfil['cpf_mascarado'] ?: ($alunoPerfil['cpf'] ?: 'Não informado'), ENT_QUOTES, 'UTF-8') ?></strong></span>
+          <?php if (!empty($alunoPerfil['email'])): ?>
+            <span>&bull; E-mail: <strong><?= htmlspecialchars($alunoPerfil['email'], ENT_QUOTES, 'UTF-8') ?></strong></span>
+          <?php endif; ?>
+          <?php if (!empty($alunoPerfil['telefone'])): ?>
+            <span>&bull; Telefone: <strong><?= htmlspecialchars($alunoPerfil['telefone'], ENT_QUOTES, 'UTF-8') ?></strong></span>
+          <?php endif; ?>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--ink-soft); margin-top: 0.35rem;">
+          Estes são os dados que constarão no seu Certificado Oficial de Conclusão.
+        </div>
+      </div>
+
+      <div>
+        <button type="button" class="btn-request-correction" onclick="document.getElementById('modalCorrecaoDados').classList.add('is-active')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <span>Solicitar Correção de Dados</span>
+        </button>
+      </div>
+    </div>
+  <?php endif; ?>
+
   <!-- Gestão de Certificados Conforme Configuração da Turma -->
   <?php 
   $modoCertificados = $turma['portal_certificados_modo'] ?? 'nenhum';
   if ($modoCertificados === 'coordenacao'): ?>
     <div class="cert-banner">
       <div class="cert-banner-text">
-        <h3>🎓 Certificados Oficiais Emitidos</h3>
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          <span>Certificados Oficiais Emitidos</span>
+        </h3>
         <p>
           Os certificados desta turma foram emitidos e entregues diretamente à <strong>coordenação do evento / RH da sua empresa</strong> para distribuição. Você pode verificar a autenticidade a qualquer momento pelo validador oficial.
         </p>
@@ -907,7 +1087,10 @@ $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappMsg}";
   <?php elseif ($modoCertificados === 'download_direto'): ?>
     <div class="cert-banner" style="display: block;">
       <div class="cert-banner-text" style="margin-bottom: 1rem;">
-        <h3>🎓 Emissão e Consulta Individual de Certificado</h3>
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          <span>Emissão e Consulta Individual de Certificado</span>
+        </h3>
         <p>
           Os certificados desta turma estão liberados para consulta direta. Digite seu CPF para conferir seu código de registro e autenticidade.
         </p>
@@ -1060,6 +1243,52 @@ $whatsappLink = "https://wa.me/{$whatsappNumero}?text={$whatsappMsg}";
     Garantia formal de disponibilidade de acesso por 12 meses após a realização do curso para estudo e consulta contínua da equipe.
   </div>
 
+  <?php if ($isAlunoLogado && !empty($alunoPerfil)): ?>
+    <!-- Modal de Solicitação de Correção Cadastral (Ticket 12) -->
+    <div id="modalCorrecaoDados" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modalCorrecaoTitle">
+      <div class="modal-box">
+        <form method="POST" action="/turmas<?= $turmaSlug ? '/' . htmlspecialchars($turmaSlug, ENT_QUOTES, 'UTF-8') : '' ?>">
+          <input type="hidden" name="action" value="solicitar_correcao">
+          
+          <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--gray-line); display: flex; justify-content: space-between; align-items: center;">
+            <h3 id="modalCorrecaoTitle" style="margin: 0; font-size: 1.125rem; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 0.5rem;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <span>Solicitar Correção de Dados Cadastrais</span>
+            </h3>
+            <button type="button" onclick="document.getElementById('modalCorrecaoDados').classList.remove('is-active')" style="background: none; border: none; font-size: 1.25rem; color: var(--gray); cursor: pointer;">&times;</button>
+          </div>
+
+          <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+            <p style="margin: 0; font-size: 0.8125rem; color: var(--ink-soft); line-height: 1.4;">
+              Preencha abaixo os campos que precisam ser ajustados para a emissão correta do seu certificado oficial. O instrutor validará as alterações no diário de classe.
+            </p>
+            <div>
+              <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: var(--ink); margin-bottom: 0.25rem;">Nome Completo Correto:</label>
+              <input type="text" name="nome_completo" value="<?= htmlspecialchars($alunoPerfil['nome_completo'] ?? '', ENT_QUOTES, 'UTF-8') ?>" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-line); border-radius: 6px; font-size: 0.875rem;">
+            </div>
+            <div>
+              <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: var(--ink); margin-bottom: 0.25rem;">CPF Correto:</label>
+              <input type="text" name="cpf" value="<?= htmlspecialchars($alunoPerfil['cpf'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="000.000.000-00" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-line); border-radius: 6px; font-size: 0.875rem;">
+            </div>
+            <div>
+              <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: var(--ink); margin-bottom: 0.25rem;">Telefone / WhatsApp:</label>
+              <input type="text" name="telefone" value="<?= htmlspecialchars($alunoPerfil['telefone'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="(00) 00000-0000" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-line); border-radius: 6px; font-size: 0.875rem;">
+            </div>
+            <div>
+              <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: var(--ink); margin-bottom: 0.25rem;">Motivo ou Justificativa (Opcional):</label>
+              <input type="text" name="motivo" placeholder="ex: Erro de digitação no sobrenome" style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-line); border-radius: 6px; font-size: 0.875rem;">
+            </div>
+          </div>
+
+          <div style="padding: 1rem 1.5rem; background: var(--paper-2); border-top: 1px solid var(--gray-line); display: flex; justify-content: flex-end; gap: 0.75rem;">
+            <button type="button" onclick="document.getElementById('modalCorrecaoDados').classList.remove('is-active')" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-line); background: #FFFFFF; border-radius: 6px; font-size: 0.875rem; font-weight: 600; cursor: pointer; color: var(--ink-soft);">Cancelar</button>
+            <button type="submit" style="padding: 0.5rem 1.25rem; background: var(--cyan); border: none; border-radius: 6px; color: #FFFFFF; font-size: 0.875rem; font-weight: 600; cursor: pointer;">Enviar Solicitação</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  <?php endif; ?>
+
 <?php endif; ?>
 
 </main>
@@ -1071,6 +1300,13 @@ function toggleEmbed(id) {
     drawer.classList.toggle('active');
   }
 }
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    var modal = document.getElementById('modalCorrecaoDados');
+    if (modal) modal.classList.remove('is-active');
+  }
+});
 </script>
 
 </body>

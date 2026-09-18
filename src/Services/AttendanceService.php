@@ -53,6 +53,7 @@ class AttendanceService
                 t.data_conclusao,
                 t.turno_padrao,
                 t.status AS status_turma,
+                t.chave_acesso,
                 t.instrutor,
                 t.cidade,
                 t.ementa
@@ -149,6 +150,7 @@ class AttendanceService
             'tipo'                 => $row['tipo'],
             'abonado'              => (int)$row['abonado'],
             'codigo_turma'         => $row['codigo_turma'],
+            'chave_acesso'         => (string)($row['chave_acesso'] ?? ''),
             'curso_nome'           => $row['curso_nome'],
             'cliente_nome'         => $row['cliente_nome'],
             'ordem_servico'        => $row['ordem_servico'],

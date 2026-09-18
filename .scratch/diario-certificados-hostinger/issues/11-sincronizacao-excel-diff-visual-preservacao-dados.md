@@ -7,11 +7,11 @@ Aprimorar o fluxo de sincronização bidirecional com planilhas Excel (.xlsx): a
 05: Sincronização Bidirecional com Planilhas Excel (.xlsx)
 09: Gerenciamento Completo de Turmas, Modo Multi-Seleção no Calendário e Override de Encontros
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] Ao realizar o upload do arquivo `.xlsx` na tela da turma (`/diario/turma`), o sistema analisa a planilha em memória sem persistir de imediato e gera um relatório estruturado de **Diff Visual**.
-- [ ] A interface exibe a prévia com contadores e listas expansíveis com distinção visual: novos alunos a cadastrar, alunos existentes a atualizar, encontros com datas/horários alterados e registros inalterados.
-- [ ] **Regra Estrita de Preservação de Seções Vazias:** Se a aba de Alunos estiver vazia na planilha reimportada (ex: operador manteve apenas o cabeçalho pois pretendia ajustar apenas datas), o parser não apaga nem limpa os alunos existentes no banco de dados; apenas preserva os registros existentes.
-- [ ] **Reagendamento Seguro de Aulas Realizadas:** Se o operador alterar a data ou horário de uma aula que já teve chamada gravada no Modo Aula, o sistema atualiza a data do encontro e mantém íntegras todas as presenças e conteúdos já ministrados, registrando aviso no Diff Visual.
-- [ ] O operador tem os botões de ação explícita: `[ Confirmar e Aplicar Sincronização ]` e `[ Cancelar ]`.
-- [ ] A confirmação executa todas as atualizações dentro de uma transação única e atômica (`BEGIN ... COMMIT`) no MariaDB, garantindo consistência total.
+- [x] Ao realizar o upload do arquivo `.xlsx` na tela da turma (`/diario/turma`), o sistema analisa a planilha em memória sem persistir de imediato e gera um relatório estruturado de **Diff Visual**.
+- [x] A interface exibe a prévia com contadores e listas expansíveis com distinção visual: novos alunos a cadastrar, alunos existentes a atualizar, encontros com datas/horários alterados e registros inalterados.
+- [x] **Regra Estrita de Preservação de Seções Vazias:** Se a aba de Alunos estiver vazia na planilha reimportada (ex: operador manteve apenas o cabeçalho pois pretendia ajustar apenas datas), o parser não apaga nem limpa os alunos existentes no banco de dados; apenas preserva os registros existentes.
+- [x] **Reagendamento Seguro de Aulas Realizadas:** Se o operador alterar a data ou horário de uma aula que já teve chamada gravada no Modo Aula, o sistema atualiza a data do encontro e mantém íntegras todas as presenças e conteúdos já ministrados, registrando aviso no Diff Visual.
+- [x] O operador tem os botões de ação explícita: `[ Confirmar e Aplicar Sincronização ]` e `[ Cancelar ]`.
+- [x] A confirmação executa todas as atualizações dentro de uma transação única e atômica (`BEGIN ... COMMIT`) no MariaDB, garantindo consistência total.

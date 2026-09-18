@@ -122,6 +122,11 @@ if (preg_match('#^/turmas/logout(?:\.php)?/?$#', $uri)) {
     exit;
 }
 
+if (preg_match('#^/turmas/entrar(?:\.php)?/?$#', $uri)) {
+    require $publicDir . '/turmas/entrar.php';
+    exit;
+}
+
 if ($uri === '/turmas' || $uri === '/turmas/') {
     require $publicDir . '/turmas/index.php';
     exit;
