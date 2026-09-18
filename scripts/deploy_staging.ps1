@@ -65,6 +65,36 @@ if (-not $SkipTests) {
         Write-Error "Suíte de refinamentos de segurança (Ticket 07c) falhou! Deploy abortado."
         exit 1
     }
+    $testT09 = & php "$PSScriptRoot\..\tests\test_ticket_09_turmas_override.php"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Suíte de gerenciamento de turmas (Ticket 09) falhou! Deploy abortado."
+        exit 1
+    }
+    $testT10 = & php "$PSScriptRoot\..\tests\test_ticket_10_trash_and_soft_delete.php"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Suíte de lixeira e soft-delete (Ticket 10) falhou! Deploy abortado."
+        exit 1
+    }
+    $testT11 = & php "$PSScriptRoot\..\tests\test_ticket_11_excel_diff_sync.php"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Suíte de sincronização Excel com diff (Ticket 11) falhou! Deploy abortado."
+        exit 1
+    }
+    $testT12 = & php "$PSScriptRoot\..\tests\test_ticket_12_portal_aluno_telao_auto_acesso.php"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Suíte de portal do aluno e telão QR code (Ticket 12) falhou! Deploy abortado."
+        exit 1
+    }
+    $testT13 = & php "$PSScriptRoot\..\tests\test_ticket_13_billing_and_nfse.php"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Suíte de faturamento e NFS-e (Ticket 13) falhou! Deploy abortado."
+        exit 1
+    }
+    $testUI04 = & php "$PSScriptRoot\..\tests\test_ticket_ui_04_modo_aula.php"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Suíte de modo aula mobile (Ticket UI 04) falhou! Deploy abortado."
+        exit 1
+    }
     Write-Host "Todas as suítes de testes 100% aprovadas!" -ForegroundColor Green
 }
 
