@@ -37,6 +37,7 @@ $calendarService = new CalendarService($pdo);
 
 $feedbackSuccess = null;
 $feedbackError = null;
+$overlapConfirmation = null;
 
 // 2. Processamento de Ações POST (Agendamento rápido com bloqueio de choque)
 $requestMethod = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -47,6 +48,7 @@ if ($requestMethod === 'POST') {
     } else {
         $acao = $_POST['acao'] ?? '';
         $confirmarExcecao = !empty($_POST['confirmar_excecao_feriado']);
+        $confirmarSobreposicao = !empty($_POST['confirmar_sobreposicao']);
 
         if ($acao === 'agendar_encontro') {
             $turmaId = (int)($_POST['turma_id'] ?? 0);
@@ -57,6 +59,24 @@ if ($requestMethod === 'POST') {
             $conteudo = trim((string)($_POST['conteudo_previsto'] ?? ''));
 
             try {
+                $conflito = $calendarService->checkConflict($dataEncontro, $turno, null, null, $confirmarExcecao);
+                if ($conflito !== null && !$confirmarSobreposicao && CalendarService::isConfirmableOverlap($conflito)) {
+                    $overlapConfirmation = [
+                        'tab'     => 'encontro',
+                        'message' => $conflito['mensagem'],
+                        'fields'  => [
+                            'enc_data'     => $dataEncontro,
+                            'enc_turma'    => (string)$turmaId,
+                            'enc_turno'    => $turno,
+                            'enc_h_ini'    => $hIni,
+                            'enc_h_fim'    => $hFim,
+                            'enc_conteudo' => $conteudo,
+                        ],
+                        'checkboxes' => [
+                            'confirmar_excecao_feriado' => $confirmarExcecao,
+                        ],
+                    ];
+                } else {
                 // Descobrir o próximo número do encontro para a turma
                 $stmtNum = $pdo->prepare("SELECT COALESCE(MAX(numero_encontro), 0) + 1 FROM encontros WHERE turma_id = ?");
                 $stmtNum->execute([$turmaId]);
@@ -71,9 +91,11 @@ if ($requestMethod === 'POST') {
                     'horario_fim'               => $hFim ?: null,
                     'conteudo_previsto'         => $conteudo ?: null,
                     'confirmar_excecao_feriado' => $confirmarExcecao,
+                    'confirmar_sobreposicao'    => $confirmarSobreposicao,
                 ]);
 
                 $feedbackSuccess = "Aula/reposição agendada com sucesso para o dia " . date('d/m/Y', strtotime($dataEncontro)) . " no turno [{$turno}].";
+                }
             } catch (InvalidArgumentException $e) {
                 $feedbackError = $e->getMessage();
             } catch (Throwable $e) {
@@ -87,16 +109,35 @@ if ($requestMethod === 'POST') {
             $descricao = trim((string)($_POST['descricao'] ?? ''));
 
             try {
+                $conflito = $calendarService->checkConflict($dataEncontro, $turno, null, null, $confirmarExcecao);
+                if ($conflito !== null && !$confirmarSobreposicao && CalendarService::isConfirmableOverlap($conflito)) {
+                    $overlapConfirmation = [
+                        'tab'     => 'deslocamento',
+                        'message' => $conflito['mensagem'],
+                        'fields'  => [
+                            'desl_data'      => $dataEncontro,
+                            'desl_turma'     => (string)$turmaId,
+                            'desl_turno'     => $turno,
+                            'desl_direcao'   => $direcao,
+                            'desl_descricao' => $descricao,
+                        ],
+                        'checkboxes' => [
+                            'confirmar_excecao_feriado' => $confirmarExcecao,
+                        ],
+                    ];
+                } else {
                 $calendarService->scheduleDeslocamento(
                     $turmaId,
                     $dataEncontro,
                     $turno,
                     $direcao,
                     $descricao ?: null,
-                    $confirmarExcecao
+                    $confirmarExcecao,
+                    $confirmarSobreposicao
                 );
 
                 $feedbackSuccess = "Deslocamento logístico (✈) agendado com sucesso para o dia " . date('d/m/Y', strtotime($dataEncontro)) . " no turno [{$turno}].";
+                }
             } catch (InvalidArgumentException $e) {
                 $feedbackError = $e->getMessage();
             } catch (Throwable $e) {
@@ -160,10 +201,29 @@ if ($requestMethod === 'POST') {
                 try {
                     // Validação prévia de choque de horário (Costura de Teste 5 e Feriados)
                     $conflito = $calendarService->checkConflict($dataEncontro, $turno, null, null, $confirmarExcecao);
-                    if ($conflito !== null) {
+                    if ($conflito !== null && !$confirmarSobreposicao && CalendarService::isConfirmableOverlap($conflito)) {
+                        $overlapConfirmation = [
+                            'tab'     => 'nova_turma',
+                            'message' => $conflito['mensagem'],
+                            'fields'  => [
+                                'nova_curso'     => $cursoNome,
+                                'nova_cliente'   => $clienteNome,
+                                'nova_cidade'    => $cidade,
+                                'nova_data'      => $dataEncontro,
+                                'nova_turno'     => $turno,
+                                'nova_carga'     => (string)$cargaHoraria,
+                                'nova_modalidade'=> $modalidade,
+                                'nova_conteudo'  => $conteudo,
+                            ],
+                            'checkboxes' => [
+                                'confirmar_excecao_feriado' => $confirmarExcecao,
+                            ],
+                        ];
+                    } elseif ($conflito !== null && !($confirmarSobreposicao && CalendarService::isConfirmableOverlap($conflito))) {
                         throw new InvalidArgumentException($conflito['mensagem']);
                     }
 
+                    if ($overlapConfirmation === null) {
                     $pdo->beginTransaction();
 
                     $codigoTurma = 'TURMA-' . date('Ymd') . '-' . substr(bin2hex(random_bytes(3)), 0, 5);
@@ -203,10 +263,12 @@ if ($requestMethod === 'POST') {
                         'horario_fim'               => $hFim ?: null,
                         'conteudo_previsto'         => $conteudo ?: null,
                         'confirmar_excecao_feriado' => $confirmarExcecao,
+                        'confirmar_sobreposicao'    => $confirmarSobreposicao,
                     ]);
 
                     $pdo->commit();
                     $feedbackSuccess = "Nova turma '{$cursoNome}' cadastrada e agendada para " . date('d/m/Y', strtotime($dataEncontro)) . " no turno [{$turno}].";
+                    }
                 } catch (InvalidArgumentException $e) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
@@ -407,6 +469,39 @@ ob_start();
         flex-shrink: 0;
     }
 
+    /* Selos geométricos setoriais: cada turno possui forma e cor próprias. */
+    .turn-seal {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        flex: 0 0 20px;
+        vertical-align: middle;
+    }
+
+    .turn-seal-M {
+        background: #D97706;
+        border-radius: 999px 0 0 999px;
+    }
+
+    .turn-seal-V {
+        background: #EA580C;
+        border-radius: 0 999px 999px 0;
+    }
+
+    .turn-seal-N {
+        border: 4px solid #0E7490;
+        border-radius: 50%;
+    }
+
+    .turn-seal-D {
+        background: linear-gradient(90deg, #EA580C 0 50%, #0E7490 50% 100%);
+        border-radius: 50%;
+    }
+
+    .turn-seal.is-empty {
+        opacity: 0.24;
+    }
+
     /* Grade Mensal Detalhada */
     .cal-month-grid {
         background: var(--surface);
@@ -538,6 +633,16 @@ ob_start();
         font-size: 0.6875rem;
         font-weight: 700;
         font-family: var(--font-mono);
+    }
+
+    .turn-slot .turn-seal {
+        width: 14px;
+        height: 14px;
+        flex-basis: 14px;
+    }
+
+    .turn-slot .turn-seal-N {
+        border-width: 3px;
     }
 
     .turn-slot.empty-slot {
@@ -725,13 +830,29 @@ ob_start();
 
     .mini-day-dots {
         display: flex;
-        gap: 1.5px;
-        margin-top: 1px;
+        gap: 2px;
+        margin-top: 2px;
     }
 
     .mini-dot {
-        width: 4px;
-        height: 4px;
+        width: 8px;
+        height: 8px;
+        flex-basis: 8px;
+    }
+
+    .mini-dot.turn-seal-M {
+        border-radius: 999px 0 0 999px;
+    }
+
+    .mini-dot.turn-seal-V {
+        border-radius: 0 999px 999px 0;
+    }
+
+    .mini-dot.turn-seal-N {
+        border-width: 2px;
+    }
+
+    .mini-dot.turn-seal-D {
         border-radius: 50%;
     }
 
@@ -787,6 +908,80 @@ ob_start();
 
     .cal-modal-body {
         padding: 1.5rem;
+    }
+
+    .mobile-day-sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 2100;
+        display: flex;
+        align-items: flex-end;
+        background: rgba(27, 25, 24, 0.42);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+    }
+
+    .mobile-day-sheet.active {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .mobile-day-sheet-panel {
+        width: 100%;
+        max-height: min(82vh, 720px);
+        overflow-y: auto;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-bottom: 0;
+        border-radius: 18px 18px 0 0;
+        box-shadow: 0 -10px 32px rgba(27, 25, 24, 0.16);
+        transform: translateY(100%);
+        transition: transform 0.24s ease;
+    }
+
+    .mobile-day-sheet.active .mobile-day-sheet-panel {
+        transform: translateY(0);
+    }
+
+    .mobile-day-sheet-handle {
+        width: 38px;
+        height: 4px;
+        margin: 0.65rem auto 0;
+        border-radius: 999px;
+        background: var(--ff-line);
+    }
+
+    .mobile-day-sheet-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.75rem 1rem 1rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .mobile-day-sheet-title {
+        font-size: 1rem;
+        color: var(--dark);
+    }
+
+    .mobile-day-sheet-close {
+        display: inline-flex;
+        width: 44px;
+        height: 44px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 1.4rem;
+        cursor: pointer;
+    }
+
+    .mobile-day-sheet-body {
+        padding: 1rem;
     }
 
     .form-group {
@@ -866,6 +1061,28 @@ ob_start();
         .turn-slot {
             font-size: 0.6rem;
             height: 16px;
+        }
+
+        .turn-slot .turn-seal {
+            width: 12px;
+            height: 12px;
+            flex-basis: 12px;
+        }
+
+        .cal-modal-overlay#dayDetailsModal {
+            display: none !important;
+        }
+
+        .mobile-day-sheet .btn-submit,
+        .mobile-day-sheet .view-btn {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mobile-day-sheet-body {
+            padding-bottom: calc(1rem + env(safe-area-inset-bottom));
         }
     }
 
@@ -1067,9 +1284,7 @@ ob_start();
         <span class="legend-title">Turnos Pedagógicos (Slots Fixos Acessíveis):</span>
         <?php foreach ($turnosConfig as $sigla => $t): ?>
             <div style="display: flex; align-items: center; gap: 0.35rem;">
-                <span class="shift-badge" style="background: <?= $t['cor_fundo'] ?>; color: <?= $t['cor_texto'] ?>; border-color: <?= $t['cor_borda'] ?>;">
-                    <?= $t['letra'] ?>
-                </span>
+                <span class="turn-seal turn-seal-<?= $sigla ?>" role="img" aria-label="Selo do turno <?= htmlspecialchars($t['nome'], ENT_QUOTES, 'UTF-8') ?>"></span>
                 <span style="font-weight: 500; color: var(--text);"><?= $t['nome'] ?></span>
             </div>
         <?php endforeach; ?>
@@ -1084,9 +1299,15 @@ ob_start();
              VISÃO MENSAL DETALHADA & MEDIDOR DE CAPACIDADE (TETO 80H)
              =================================================================== -->
         <?php 
-        $workload = $calendarData['workload'] ?? [
-            'total_horas' => 0, 'teto_horas' => 80.0, 'porcentagem' => 0, 'is_sobrecarga' => false, 'saldo_horas' => 80.0, 'total_encontros' => 0, 'total_deslocamentos' => 0
-        ];
+        $workload = array_replace([
+            'total_horas'         => 0,
+            'teto_horas'          => 80.0,
+            'porcentagem'         => 0,
+            'is_sobrecarga'       => false,
+            'saldo_horas'         => 80.0,
+            'total_encontros'     => 0,
+            'total_deslocamentos' => 0,
+        ], $calendarData['workload'] ?? []);
         $pct = min(100, (float)$workload['porcentagem']);
         $barColor = $workload['is_sobrecarga'] ? '#DC2626' : ((float)$workload['porcentagem'] >= 75 ? '#D97706' : '#0E7490');
         ?>
@@ -1189,12 +1410,13 @@ ob_start();
                                         ?>
                                         <?php if ($isDesloc): ?>
                                             <div class="class-chip" style="background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE;" title="<?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?>">
-                                                <strong>✈ [<?= $enc['turno'] ?>]</strong>
+                                                <span>✈</span>
+                                                <span class="turn-seal turn-seal-<?= htmlspecialchars($enc['turno'], ENT_QUOTES, 'UTF-8') ?>" role="img" aria-label="Turno <?= htmlspecialchars($tCfg['nome'], ENT_QUOTES, 'UTF-8') ?>"></span>
                                                 <span><?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?></span>
                                             </div>
                                         <?php else: ?>
                                             <div class="class-chip" style="background: <?= $tCfg['cor_fundo'] ?>; color: <?= $tCfg['cor_texto'] ?>; border: 1px solid <?= $tCfg['cor_borda'] ?>;" title="<?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?>">
-                                                <strong>[<?= $enc['turno'] ?>]</strong>
+                                                <span class="turn-seal turn-seal-<?= htmlspecialchars($enc['turno'], ENT_QUOTES, 'UTF-8') ?>" role="img" aria-label="Turno <?= htmlspecialchars($tCfg['nome'], ENT_QUOTES, 'UTF-8') ?>"></span>
                                                 <span><?= htmlspecialchars($enc['curso_nome'], ENT_QUOTES, 'UTF-8') ?></span>
                                             </div>
                                         <?php endif; ?>
@@ -1205,8 +1427,8 @@ ob_start();
                                 </div>
                             <?php endif; ?>
 
-                            <!-- Slots Fixos Dedicados para os 4 Turnos: [M] [V] [N] [D] -->
-                            <div class="dedicated-turn-slots" title="Slots Dedicados: [M] Matutino | [V] Vespertino | [N] Noturno | [D] Dia Todo">
+                            <!-- Slots fixos dedicados para os quatro selos de turno. -->
+                            <div class="dedicated-turn-slots" aria-label="Slots dedicados: Matutino, Vespertino, Noturno e Integral">
                                 <?php foreach (['M', 'V', 'N', 'D'] as $sSigla): ?>
                                     <?php
                                     $isOcupado = in_array($sSigla, $dia['turnos_ocupados'], true) || (in_array('D', $dia['turnos_ocupados'], true) && $sSigla !== 'D');
@@ -1225,13 +1447,13 @@ ob_start();
                                                 ✈
                                             </div>
                                         <?php else: ?>
-                                            <div class="turn-slot" style="background: <?= $sCfg['cor_fundo'] ?>; color: <?= $sCfg['cor_texto'] ?>; border: 1px solid <?= $sCfg['cor_borda'] ?>;">
-                                                <?= $sSigla ?>
+                                            <div class="turn-slot" style="background: <?= $sCfg['cor_fundo'] ?>; border: 1px solid <?= $sCfg['cor_borda'] ?>;" role="img" aria-label="<?= htmlspecialchars($sCfg['nome'], ENT_QUOTES, 'UTF-8') ?> ocupado">
+                                                <span class="turn-seal turn-seal-<?= $sSigla ?>" aria-hidden="true"></span>
                                             </div>
                                         <?php endif; ?>
                                     <?php else: ?>
-                                        <div class="turn-slot empty-slot">
-                                            <?= $sSigla ?>
+                                        <div class="turn-slot empty-slot" role="img" aria-label="<?= htmlspecialchars($sCfg['nome'], ENT_QUOTES, 'UTF-8') ?> livre">
+                                            <span class="turn-seal turn-seal-<?= $sSigla ?> is-empty" aria-hidden="true"></span>
                                         </div>
                                     <?php endif; ?>
                                 <?php endforeach; ?>
@@ -1310,7 +1532,7 @@ ob_start();
                                 <?php if (!empty($d['turnos_ocupados'])): ?>
                                     <div class="mini-day-dots">
                                         <?php foreach ($d['turnos_ocupados'] as $tOcup): ?>
-                                            <span class="mini-dot" style="background: <?= $turnosConfig[$tOcup]['cor_texto'] ?? '#0E7490' ?>;"></span>
+                                            <span class="mini-dot turn-seal turn-seal-<?= htmlspecialchars($tOcup, ENT_QUOTES, 'UTF-8') ?>" aria-label="<?= htmlspecialchars($turnosConfig[$tOcup]['nome'] ?? $tOcup, ENT_QUOTES, 'UTF-8') ?> ocupado"></span>
                                         <?php endforeach; ?>
                                     </div>
                                 <?php endif; ?>
@@ -1340,6 +1562,18 @@ ob_start();
     </div>
 </div>
 
+<!-- Gaveta inferior para detalhes do dia em telas táteis -->
+<div id="mobileDaySheet" class="mobile-day-sheet" role="dialog" aria-modal="true" aria-labelledby="mobileDaySheetTitle" aria-hidden="true" onclick="handleMobileDaySheetBackdrop(event)">
+    <div class="mobile-day-sheet-panel">
+        <div class="mobile-day-sheet-handle" aria-hidden="true"></div>
+        <div class="mobile-day-sheet-header">
+            <h3 class="mobile-day-sheet-title" id="mobileDaySheetTitle">Compromissos do Dia</h3>
+            <button type="button" class="mobile-day-sheet-close" aria-label="Fechar detalhes do dia" onclick="closeMobileDaySheet()">&times;</button>
+        </div>
+        <div class="mobile-day-sheet-body" id="mobileDaySheetContent"></div>
+    </div>
+</div>
+
 <!-- Modal de Agendamento Rápido -->
 <div id="fastScheduleModal" class="cal-modal-overlay">
     <div class="cal-modal">
@@ -1355,6 +1589,8 @@ ob_start();
                 <button type="button" id="tabDeslocamentoBtn" class="view-btn" style="flex: 1; min-width: 120px; border: none; cursor: pointer; text-align: center;" onclick="switchScheduleTab('deslocamento')">✈ Deslocamento</button>
                 <button type="button" id="tabRemarcarBtn" class="view-btn" style="flex: 1; min-width: 120px; border: none; cursor: pointer; text-align: center;" onclick="switchScheduleTab('remarcar')">🔄 Remarcar em Bloco</button>
             </div>
+
+            <div id="overlapConflictAlert" hidden role="alert" style="background: #FFF7ED; border: 1px solid #EA580C; color: #9A3412; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem; font-size: 0.875rem; line-height: 1.45;"></div>
 
             <!-- Formulário 1: Aula em Turma Existente -->
             <form id="formAgendarEncontro" method="POST" action="/diario/calendario">
@@ -1408,6 +1644,13 @@ ob_start();
                     <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; color: var(--text);">
                         <input type="checkbox" name="confirmar_excecao_feriado" value="1">
                         <span>Confirmar <strong>exceção consciente</strong> se a data for feriado ou bloqueio</span>
+                    </label>
+                </div>
+
+                <div style="background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 6px; padding: 0.6rem 0.85rem; margin-top: 0.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; color: #9A3412;">
+                        <input type="checkbox" name="confirmar_sobreposicao" value="1">
+                        <span>Confirmo a <strong>sobreposição de horário</strong> se já houver compromisso neste turno</span>
                     </label>
                 </div>
 
@@ -1480,6 +1723,13 @@ ob_start();
                     </label>
                 </div>
 
+                <div style="background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 6px; padding: 0.6rem 0.85rem; margin-top: 0.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; color: #9A3412;">
+                        <input type="checkbox" name="confirmar_sobreposicao" value="1">
+                        <span>Confirmo a <strong>sobreposição de horário</strong> se este turno já estiver ocupado</span>
+                    </label>
+                </div>
+
                 <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
                     <button type="button" class="view-btn" onclick="closeFastScheduleModal()">Cancelar</button>
                     <button type="submit" class="btn-submit">Criar e Agendar</button>
@@ -1543,6 +1793,13 @@ ob_start();
                     </label>
                 </div>
 
+                <div style="background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 6px; padding: 0.6rem 0.85rem; margin-top: 0.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer; color: #9A3412;">
+                        <input type="checkbox" name="confirmar_sobreposicao" value="1">
+                        <span>Confirmo a <strong>sobreposição de horário</strong> se este turno já estiver ocupado</span>
+                    </label>
+                </div>
+
                 <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
                     <button type="button" class="view-btn" onclick="closeFastScheduleModal()">Cancelar</button>
                     <button type="submit" class="btn-submit" style="background: #4338CA;">Agendar Deslocamento ✈</button>
@@ -1595,6 +1852,17 @@ ob_start();
 <script>
     const popoverEl = document.getElementById('calendarPopover');
     let popoverTimeout = null;
+
+    function turnSealMarkup(turno) {
+        const normalized = ['M', 'V', 'N', 'D'].includes(turno) ? turno : 'V';
+        const labels = {
+            M: 'Matutino',
+            V: 'Vespertino',
+            N: 'Noturno',
+            D: 'Integral',
+        };
+        return `<span class="turn-seal turn-seal-${normalized}" role="img" aria-label="Turno ${labels[normalized]}"></span>`;
+    }
 
     // Gerenciador de Rollover / Hover no Desktop
     document.querySelectorAll('[data-popover]').forEach(el => {
@@ -1651,10 +1919,10 @@ ob_start();
                 const isDesloc = (enc.tipo === 'deslocamento');
                 html += `
                     <div class="popover-item" style="${isDesloc ? 'border-left: 3px solid #6366F1; background: #F8FAFC;' : ''}">
-                        <div class="popover-item-title">${isDesloc ? '✈ [Deslocamento Logístico]' : '[' + enc.turno_sigla + ']'} ${enc.curso}</div>
+                        <div class="popover-item-title">${isDesloc ? '✈ ' : ''}${turnSealMarkup(enc.turno_sigla)} ${isDesloc ? 'Deslocamento Logístico — ' : ''}${enc.curso}</div>
                         <div class="popover-item-client">${enc.cliente}</div>
                         <div class="popover-item-footer">
-                            <span style="font-weight: 600; color: ${isDesloc ? '#4338CA' : 'var(--primary)'};">${isDesloc ? 'Turno ' + enc.turno_sigla : enc.horario}</span>
+                            <span style="font-weight: 600; color: ${isDesloc ? '#4338CA' : 'var(--primary)'};">${isDesloc ? (enc.turno_nome || 'Turno reservado') : enc.horario}</span>
                             <span style="text-transform: uppercase; font-size: 0.65rem; background: ${isDesloc ? '#EEF2FF; color: #4338CA' : '#E2E8F0'}; padding: 1px 5px; border-radius: 4px;">${isDesloc ? 'Logística' : enc.status_turma}</span>
                         </div>
                     </div>
@@ -1756,6 +2024,16 @@ ob_start();
         window.location.href = '/diario/turmas/novo?datas=' + encodeURIComponent(sorted.join(','));
     }
 
+    function createEmptyDayData(dateStr) {
+        const date = new Date(`${dateStr}T00:00:00`);
+        return {
+            data: dateStr,
+            data_formatada: new Intl.DateTimeFormat('pt-BR').format(date),
+            dia_semana: new Intl.DateTimeFormat('pt-BR', { weekday: 'long' }).format(date),
+            encontros: [],
+        };
+    }
+
     // Clique no Dia
     function handleDayClick(dateStr, cellEl) {
         if (modoSelecaoAtivo) {
@@ -1773,12 +2051,20 @@ ob_start();
             try {
                 const data = JSON.parse(rawData);
                 if (data && ((data.encontros && data.encontros.length > 0) || data.bloqueio || data.ponte)) {
-                    openDayModalWithData(data);
+                    if (window.matchMedia('(max-width: 768px)').matches) {
+                        openMobileDaySheet(data);
+                    } else {
+                        openDayModalWithData(data);
+                    }
                     return;
                 }
             } catch (err) {}
         }
-        // Dia livre: abre direto o agendamento rápido
+        // Dia livre: no celular mantém a mesma interação de gaveta; no desktop abre agendamento.
+        if (window.matchMedia('(max-width: 768px)').matches) {
+            openMobileDaySheet(createEmptyDayData(dateStr));
+            return;
+        }
         openFastScheduleModal(dateStr, 'V');
     }
 
@@ -1817,21 +2103,21 @@ ob_start();
                     <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; ${isDesloc ? 'border-left: 4px solid #6366F1;' : ''}">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.35rem;">
                             <h4 style="font-size: 0.9375rem; font-weight: 700; color: var(--dark);">
-                                ${isDesloc ? '✈ [Deslocamento] ' : '[' + enc.turno_sigla + '] '} ${enc.curso}
+                                ${isDesloc ? '✈ ' : ''}${turnSealMarkup(enc.turno_sigla)} ${isDesloc ? 'Deslocamento — ' : ''}${enc.curso}
                             </h4>
                             <span style="background: ${isDesloc ? '#EEF2FF; color: #4338CA' : '#E0F2FE; color: #0369A1'}; font-weight: 700; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;">
                                 ${isDesloc ? 'Logística ✈' : enc.status_turma}
                             </span>
                         </div>
                         <p style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-                            Cliente: <strong>${enc.cliente}</strong> | Horário/Turno: <strong>${isDesloc ? 'Turno ' + enc.turno_sigla : enc.horario}</strong>
+                            Cliente: <strong>${enc.cliente}</strong> | Horário/Turno: <strong>${isDesloc ? (enc.turno_nome || 'Turno reservado') : enc.horario}</strong>
                         </p>
                         ${enc.conteudo ? '<p style="font-size: 0.775rem; color: var(--text); margin-bottom: 0.5rem; font-style: italic;">' + enc.conteudo + '</p>' : ''}
                         
                         <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap;">
                             ${!isDesloc ? `
                                 <a href="/diario/aula?encontro_id=${enc.encontro_id}" class="btn-submit" style="font-size: 0.78rem; text-decoration: none; padding: 0.4rem 0.8rem;">
-                                    Abrir Diário & Chamada
+                                    Abrir Diário deste Encontro
                                 </a>
                             ` : `
                                 <span style="font-size: 0.78rem; color: #4338CA; font-weight: 600; background: #EEF2FF; padding: 0.4rem 0.8rem; border-radius: 6px;">
@@ -1841,7 +2127,7 @@ ob_start();
                             <a href="/diario/turma?turma_id=${enc.turma_id}" class="view-btn" style="font-size: 0.78rem; text-decoration: none; padding: 0.4rem 0.8rem;">
                                 Detalhes da Turma
                             </a>
-                            <button type="button" class="view-btn" style="font-size: 0.78rem; padding: 0.4rem 0.8rem; cursor: pointer;" onclick="closeDayModal(); openRescheduleTurmaModal(${enc.turma_id})">
+                            <button type="button" class="view-btn" style="font-size: 0.78rem; padding: 0.4rem 0.8rem; cursor: pointer;" onclick="closeDaySurface(); openRescheduleTurmaModal(${enc.turma_id})">
                                 🔄 Remarcar Turma
                             </button>
                         </div>
@@ -1855,7 +2141,7 @@ ob_start();
         html += `
             <div style="border-top: 1px solid var(--border); padding-top: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                 <span style="font-size: 0.8125rem; color: var(--text-muted);">Precisa agendar compromisso neste dia?</span>
-                <button type="button" class="btn-submit" style="font-size: 0.8125rem;" onclick="closeDayModal(); openFastScheduleModal('${data.data}', 'V')">+ Novo Agendamento</button>
+                <button type="button" class="btn-submit" style="font-size: 0.8125rem;" onclick="closeDaySurface(); openFastScheduleModal('${data.data}', 'V')">+ Novo Agendamento</button>
             </div>
         `;
 
@@ -1865,6 +2151,34 @@ ob_start();
 
     function closeDayModal() {
         document.getElementById('dayDetailsModal').classList.remove('active');
+    }
+
+    function openMobileDaySheet(data) {
+        openDayModalWithData(data);
+        document.getElementById('mobileDaySheetTitle').innerText = document.getElementById('modalDayTitle').innerText;
+        document.getElementById('mobileDaySheetContent').innerHTML = document.getElementById('modalDayContent').innerHTML;
+        closeDayModal();
+
+        const sheet = document.getElementById('mobileDaySheet');
+        sheet.classList.add('active');
+        sheet.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeMobileDaySheet() {
+        const sheet = document.getElementById('mobileDaySheet');
+        sheet.classList.remove('active');
+        sheet.setAttribute('aria-hidden', 'true');
+    }
+
+    function closeDaySurface() {
+        closeDayModal();
+        closeMobileDaySheet();
+    }
+
+    function handleMobileDaySheetBackdrop(event) {
+        if (event.target.id === 'mobileDaySheet') {
+            closeMobileDaySheet();
+        }
     }
 
     function openFastScheduleModal(dateStr, defaultTurno) {
@@ -1926,10 +2240,53 @@ ob_start();
         }
     }
 
+    function restoreOverlapDraft(draft) {
+        const dateInputByTab = {
+            encontro: 'enc_data',
+            nova_turma: 'nova_data',
+            deslocamento: 'desl_data',
+        };
+        const dateValue = draft.fields[dateInputByTab[draft.tab]] || '<?= $hoje ?>';
+        const defaultTurno = draft.fields.enc_turno || draft.fields.nova_turno || draft.fields.desl_turno || 'V';
+
+        openFastScheduleModal(dateValue, defaultTurno);
+        switchScheduleTab(draft.tab);
+
+        Object.entries(draft.fields).forEach(([id, value]) => {
+            const field = document.getElementById(id);
+            if (field) field.value = value;
+        });
+
+        const form = document.getElementById(`formAgendar${draft.tab === 'encontro' ? 'Encontro' : draft.tab === 'nova_turma' ? 'NovaTurma' : 'Deslocamento'}`);
+        Object.entries(draft.checkboxes || {}).forEach(([name, checked]) => {
+            const checkbox = form?.querySelector(`[name="${name}"]`);
+            if (checkbox) checkbox.checked = Boolean(checked);
+        });
+
+        const alert = document.getElementById('overlapConflictAlert');
+        alert.textContent = `${draft.message} Confirme a sobreposição abaixo para continuar.`;
+        alert.hidden = false;
+        const confirmation = form?.querySelector('[name="confirmar_sobreposicao"]');
+        if (confirmation) confirmation.focus();
+    }
+
+    <?php if ($overlapConfirmation !== null): ?>
+    window.addEventListener('DOMContentLoaded', () => {
+        restoreOverlapDraft(<?= json_encode($overlapConfirmation, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>);
+    });
+    <?php endif; ?>
+
     // Fechar modais ao clicar no overlay
     window.addEventListener('click', (e) => {
         if (e.target.classList.contains('cal-modal-overlay')) {
             closeDayModal();
+            closeFastScheduleModal();
+        }
+    });
+
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeDaySurface();
             closeFastScheduleModal();
         }
     });

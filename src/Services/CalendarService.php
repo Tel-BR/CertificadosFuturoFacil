@@ -287,36 +287,36 @@ class CalendarService
             'M' => [
                 'letra'          => 'M',
                 'nome'           => 'Matutino',
-                'cor_texto'      => '#B45309', // Âmbar escuro
-                'cor_fundo'      => '#FEF3C7', // Âmbar pastel
-                'cor_borda'      => '#F59E0B',
+                'cor_texto'      => '#92400E',
+                'cor_fundo'      => '#FEF3C7',
+                'cor_borda'      => '#D97706',
                 'slot_ordem'     => 1,
                 'horario_padrao' => '08:00 - 12:00',
             ],
             'V' => [
                 'letra'          => 'V',
                 'nome'           => 'Vespertino',
-                'cor_texto'      => '#0E7490', // Ciano / Petróleo escuro
-                'cor_fundo'      => '#ECFEFF', // Ciano pastel
-                'cor_borda'      => '#06B6D4',
+                'cor_texto'      => '#9A3412',
+                'cor_fundo'      => '#FFF7ED',
+                'cor_borda'      => '#EA580C',
                 'slot_ordem'     => 2,
                 'horario_padrao' => '14:00 - 18:00',
             ],
             'N' => [
                 'letra'          => 'N',
                 'nome'           => 'Noturno',
-                'cor_texto'      => '#1E293B', // Grafite / Slate escuro
-                'cor_fundo'      => '#F1F5F9', // Cinza neutro
-                'cor_borda'      => '#94A3B8',
+                'cor_texto'      => '#0E7490',
+                'cor_fundo'      => '#ECFEFF',
+                'cor_borda'      => '#0E7490',
                 'slot_ordem'     => 3,
                 'horario_padrao' => '19:00 - 22:30',
             ],
             'D' => [
                 'letra'          => 'D',
                 'nome'           => 'Dia Todo / Integral',
-                'cor_texto'      => '#065F46', // Esmeralda escuro
-                'cor_fundo'      => '#D1FAE5', // Verde menta pastel
-                'cor_borda'      => '#10B981',
+                'cor_texto'      => '#0E7490',
+                'cor_fundo'      => '#FAF7F1',
+                'cor_borda'      => '#0E7490',
                 'slot_ordem'     => 4,
                 'horario_padrao' => '08:00 - 17:00',
             ],
@@ -342,6 +342,18 @@ class CalendarService
             11 => 'Novembro',
             12 => 'Dezembro',
         ];
+    }
+
+    /**
+     * Indica se um conflito de turno pode prosseguir após confirmação consciente.
+     */
+    public static function isConfirmableOverlap(?array $conflito): bool
+    {
+        return in_array(
+            $conflito['tipo'] ?? null,
+            ['choque_turno', 'choque_deslocamento'],
+            true
+        );
     }
 
     /**
@@ -561,7 +573,7 @@ class CalendarService
     }
 
     /**
-     * Agenda um encontro com validação impeditiva de choque de horários.
+     * Agenda um encontro, exigindo confirmação explícita para uma sobreposição de turno.
      */
     public function scheduleEncontro(array $data): array
     {
@@ -573,6 +585,7 @@ class CalendarService
         $horarioFim = $data['horario_fim'] ?? null;
         $conteudoPrevisto = $data['conteudo_previsto'] ?? null;
         $permitirExcecao = (bool)($data['confirmar_excecao_feriado'] ?? false);
+        $confirmarSobreposicao = (bool)($data['confirmar_sobreposicao'] ?? false);
 
         if ($turmaId <= 0 || empty($dataEncontro)) {
             throw new InvalidArgumentException("Dados de agendamento incompletos (turma_id e data_encontro obrigatórios).");
@@ -580,7 +593,7 @@ class CalendarService
 
         // Validação da Costura de Teste 5 e Feriados
         $conflito = $this->checkConflict($dataEncontro, $turno, null, null, $permitirExcecao);
-        if ($conflito !== null) {
+        if ($conflito !== null && !($confirmarSobreposicao && self::isConfirmableOverlap($conflito))) {
             throw new InvalidArgumentException($conflito['mensagem']);
         }
 
@@ -626,7 +639,8 @@ class CalendarService
         string $turno,
         string $direcao = 'ida',
         ?string $descricao = null,
-        bool $permitirExcecaoFeriado = false
+        bool $permitirExcecaoFeriado = false,
+        bool $confirmarSobreposicao = false
     ): array {
         $data = trim($data);
         $turno = strtoupper(trim($turno));
@@ -635,7 +649,7 @@ class CalendarService
         }
 
         $conflito = $this->checkConflict($data, $turno, null, null, $permitirExcecaoFeriado);
-        if ($conflito !== null) {
+        if ($conflito !== null && !($confirmarSobreposicao && self::isConfirmableOverlap($conflito))) {
             throw new InvalidArgumentException($conflito['mensagem']);
         }
 

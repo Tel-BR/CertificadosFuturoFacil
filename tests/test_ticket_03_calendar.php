@@ -265,6 +265,18 @@ try {
     $corN = strtolower($turnosConfig['N']['cor_texto']);
     assertTest($corV !== $corN, 'Turnos V e N possuem cores de texto distintas e de alto contraste');
 
+    $agendamentoComSobreposicaoConfirmada = $service->scheduleEncontro([
+        'turma_id'               => $turmaId1,
+        'numero_encontro'        => 2,
+        'data_encontro'          => '2026-10-12',
+        'turno'                  => 'M',
+        'confirmar_sobreposicao' => true,
+    ]);
+    assertTest(
+        $agendamentoComSobreposicaoConfirmada['status'] === 'agendado',
+        'Confirmação explícita permite agendar uma sobreposição de turno'
+    );
+
     // =========================================================================
     // SEÇÃO 4: Matriz do Calendário Anual (12 Meses)
     // =========================================================================
@@ -364,7 +376,45 @@ try {
     assertTest(str_contains($htmlMensal, 'calendarPopover'), 'Página contém contêiner do popover flutuante');
     assertTest(str_contains($htmlMensal, 'dayDetailsModal'), 'Página contém modal de detalhes do dia e chamada');
     assertTest(str_contains($htmlMensal, 'fastScheduleModal'), 'Página contém modal de agendamento rápido com prevenção de choque');
+    assertTest(str_contains($htmlMensal, 'turn-seal turn-seal-M'), 'Página mensal usa selo geométrico de semicírculo esquerdo para manhã');
+    assertTest(str_contains($htmlMensal, 'turn-seal turn-seal-V'), 'Página mensal usa selo geométrico de semicírculo direito para tarde');
+    assertTest(str_contains($htmlMensal, 'turn-seal turn-seal-N'), 'Página mensal usa selo geométrico de anel para noite');
+    assertTest(str_contains($htmlMensal, 'turn-seal turn-seal-D'), 'Página mensal usa selo geométrico bipartido para integral');
+    assertTest(str_contains($htmlMensal, 'mobile-day-sheet'), 'Página mensal contém a gaveta inferior para detalhes no celular');
+    assertTest(str_contains($htmlMensal, 'Abrir Diário deste Encontro'), 'Gaveta móvel oferece atalho direto para o diário do encontro');
+    assertTest(str_contains($htmlMensal, 'name="confirmar_sobreposicao"'), 'Formulários exigem confirmação explícita para sobreposição');
+    assertTest(str_contains($htmlMensal, 'overlapConflictAlert'), 'Choque de horário apresenta alerta contextual em Coral Solar');
+    assertTest(str_contains($htmlMensal, 'restoreOverlapDraft'), 'Tentativa em choque mantém os dados para confirmação explícita');
+    assertTest(str_contains($htmlMensal, 'draft.checkboxes'), 'Rascunho mantém a confirmação de exceção de feriado');
+    assertTest(!str_contains($htmlMensal, "'Turno ' + enc.turno_sigla"), 'Detalhes de deslocamento usam o nome do turno, sem sigla crua');
+    assertTest(str_contains($htmlMensal, 'createEmptyDayData'), 'Data livre abre a gaveta móvel com estado de agenda vazio');
     assertTest(str_contains($htmlMensal, $_SESSION['admin_csrf_token']), 'Formulários do calendário contêm token CSRF ativo');
+
+    $service->scheduleEncontro([
+        'turma_id'        => $turmaId1,
+        'numero_encontro' => 99,
+        'data_encontro'   => '2026-10-14',
+        'turno'           => 'M',
+    ]);
+    $_SERVER['REQUEST_METHOD'] = 'POST';
+    $_POST = [
+        'csrf_token'         => $_SESSION['admin_csrf_token'],
+        'acao'               => 'agendar_encontro',
+        'turma_id'           => (string)$turmaId1,
+        'data_encontro'      => '2026-10-14',
+        'turno'              => 'M',
+        'horario_inicio'     => '08:00',
+        'horario_fim'        => '12:00',
+        'conteudo_previsto'  => 'Confirmação de sobreposição',
+    ];
+    ob_start();
+    require __DIR__ . '/../public/diario/calendario.php';
+    $htmlSobreposicao = ob_get_clean();
+    assertTest(str_contains($htmlSobreposicao, 'Choque de hor'), 'Choque confirmado devolve aviso contextual ao formulário');
+    assertTest(str_contains($htmlSobreposicao, 'restoreOverlapDraft('), 'Aviso de choque reabre o formulário com o rascunho preservado');
+
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    $_POST = [];
 
     // 6.2 Testar Visão Anual
     $_GET['view'] = 'anual';
