@@ -6,13 +6,13 @@ Permitir que o operador crie e gerencie turmas de ponta a ponta com flexibilidad
 **Blocked by:**
 08: Gestão Avançada de Capacidade (Deslocamento, Feriados, Remarcação em Bloco, Teto 80h)
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] No Calendário Mensal (`/diario/calendario`), um botão `[ Modo Seleção ]` permite alternar para o modo de seleção múltipla: o operador clica diretamente nas células de dias desejados, destacando-os visualmente com numeração ordinal ordenada (*1º Dia, 2º Dia...*).
-- [ ] Uma barra flutuante de ação rápida no calendário exibe o total de dias selecionados e o botão `[ Agendar Turma nestas Datas → ]`, abrindo o formulário de cadastro com todas as datas preenchidas cronologicamente sem choques de horário.
-- [ ] O sistema disponibiliza o formulário web completo de cadastro e edição de turma (`/diario/turmas/novo` e `/diario/turma/editar`), incluindo campos pedagógicos e operacionais (nome do curso, cliente, modalidade, carga horária e gerador de encontros).
-- [ ] **Bidirecionalidade Inteligente de Horários e Turnos:** Selecionar um turno (ex: `[V]`) pré-carrega o horário padrão (14:00 - 18:00); digitar ou alterar horários livres (ex: `13:00 - 17:00` ou `14:00 - 16:00`) infere e marca automaticamente o turno correspondente (`[V]`) no frontend e na validação do backend.
-- [ ] **Grade Individual de Encontros com Override:** A turma gera seus encontros com base no turno e horário padrão, mas exibe uma tabela de encontros permitindo ao operador alterar data, turno e horário específico de qualquer encontro individual (ex: encontro de sábado pela manhã em turma vespertina), além de adicionar encontros extras de reposição e excluir encontros pendentes sem chamadas.
-- [ ] **Desacoplamento e Alunos Opcionais:** A criação e o salvamento da turma funcionam perfeitamente mesmo com 0 alunos matriculados, permitindo uso imediato para controle de agenda e diário de classe.
-- [ ] **Ciclo de Vida:** O sistema sugere ou atualiza o status de `prevista` para `em_andamento` automaticamente na data do primeiro encontro cadastrado.
-- [ ] Todas as alterações mantêm 100% da suíte de testes existente verde.
+- [x] No Calendário Mensal (`/diario/calendario`), um botão `[ Modo Seleção ]` permite alternar para o modo de seleção múltipla: o operador clica diretamente nas células de dias desejados, destacando-os visualmente com numeração ordinal ordenada (*1º Dia, 2º Dia...*).
+- [x] Uma barra flutuante de ação rápida no calendário exibe o total de dias selecionados e o botão `[ Agendar Turma nestas Datas → ]`, abrindo o formulário de cadastro com todas as datas preenchidas cronologicamente sem choques de horário.
+- [x] O sistema disponibiliza o formulário web completo de cadastro e edição de turma (`/diario/turmas/novo` e `/diario/turma/editar`), incluindo campos pedagógicos e operacionais (nome do curso, cliente, modalidade, carga horária e gerador de encontros).
+- [x] **Bidirecionalidade Inteligente de Horários e Turnos:** Selecionar um turno (ex: `[V]`) pré-carrega o horário padrão (14:00 - 18:00); digitar ou alterar horários livres (ex: `13:00 - 17:00` ou `14:00 - 16:00`) infere e marca automaticamente o turno correspondente (`[V]`) no frontend e na validação do backend.
+- [x] **Grade Individual de Encontros com Override:** A turma gera seus encontros com base no turno e horário padrão, mas exibe uma tabela de encontros permitindo ao operador alterar data, turno e horário específico de qualquer encontro individual (ex: encontro de sábado pela manhã em turma vespertina), além de adicionar encontros extras de reposição e excluir encontros pendentes sem chamadas.
+- [x] **Desacoplamento e Alunos Opcionais:** A criação e o salvamento da turma funcionam perfeitamente mesmo com 0 alunos matriculados, permitindo uso imediato para controle de agenda e diário de classe.
+- [x] **Ciclo de Vida:** O sistema sugere ou atualiza o status de `prevista` para `em_andamento` automaticamente na data do primeiro encontro cadastrado.
+- [x] Todas as alterações mantêm 100% da suíte de testes existente verde.

@@ -868,6 +868,136 @@ ob_start();
             height: 16px;
         }
     }
+
+    /* Modo Seleção e Destaques do Ticket 09 */
+    .btn-modo-selecao {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: #FFFFFF;
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 0.5rem 0.85rem;
+        border-radius: var(--radius-sm);
+        font-weight: 600;
+        font-size: 0.8125rem;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .btn-modo-selecao:hover {
+        background: var(--surface-hover);
+        border-color: var(--primary);
+    }
+
+    .btn-modo-selecao.active {
+        background: #0E7490;
+        color: #FFFFFF;
+        border-color: #0E7490;
+        box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.2);
+    }
+
+    .selection-mode-active .cal-day-cell {
+        cursor: pointer;
+    }
+
+    .selection-mode-active .cal-day-cell:hover {
+        outline: 2px dashed #0E7490;
+        outline-offset: -2px;
+    }
+
+    .cal-day-cell.day-selected {
+        background: #ECFEFF !important;
+        border: 2px solid #0E7490 !important;
+        position: relative;
+    }
+
+    .ordinal-badge {
+        font-size: 0.65rem;
+        font-weight: 700;
+        background: #0E7490;
+        color: #FFFFFF;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        letter-spacing: -0.2px;
+    }
+
+    /* Barra Flutuante de Ação Rápida */
+    .floating-selection-bar {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 2rem;
+        z-index: 1500;
+        background: #1B1918;
+        color: #FFFFFF;
+        padding: 0.85rem 1.25rem;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+        animation: slideUpFade 0.2s ease-out;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    @keyframes slideUpFade {
+        from { transform: translateY(20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    .selection-info {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .selection-count-badge {
+        background: #0E7490;
+        color: #FFFFFF;
+        font-weight: 700;
+        font-size: 0.875rem;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-family: var(--font-mono);
+    }
+
+    .btn-agendar-selecao {
+        background: #EA580C;
+        color: #FFFFFF;
+        border: none;
+        padding: 0.55rem 1rem;
+        border-radius: 8px;
+        font-weight: 700;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        text-decoration: none;
+    }
+
+    .btn-agendar-selecao:hover {
+        background: #C2410C;
+    }
+
+    .btn-cancel-selection {
+        background: transparent;
+        color: #94A3B8;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 0.45rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .btn-cancel-selection:hover {
+        color: #FFFFFF;
+        border-color: #FFFFFF;
+    }
 </style>
 
 <div class="cal-container">
@@ -919,6 +1049,13 @@ ob_start();
                 <a href="/diario/calendario?view=anual&ano=<?= $calendarData['nav']['prev_ano'] ?>" class="nav-arrow-btn" title="Ano Anterior">‹</a>
                 <a href="/diario/calendario?view=anual&ano=<?= $calendarData['nav']['hoje_ano'] ?>" class="btn-today">Ano Atual</a>
                 <a href="/diario/calendario?view=anual&ano=<?= $calendarData['nav']['next_ano'] ?>" class="nav-arrow-btn" title="Próximo Ano">›</a>
+            <?php endif; ?>
+
+            <?php if ($view === 'mensal'): ?>
+                <button type="button" id="btn-toggle-selecao" class="btn-modo-selecao" onclick="toggleModoSelecao()">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    <span>Modo Seleção</span>
+                </button>
             <?php endif; ?>
 
             <button type="button" class="btn-submit" onclick="openFastScheduleModal('<?= $hoje ?>', 'V')">+ Agendar</button>
@@ -1102,6 +1239,20 @@ ob_start();
                         </div>
                     <?php endforeach; ?>
                 <?php endforeach; ?>
+        </div>
+
+        <!-- Barra Flutuante de Ação Rápida do Modo Seleção (Ticket 09) -->
+        <div id="floating-selection-bar" class="floating-selection-bar" style="display: none;">
+            <div class="selection-info">
+                <span class="selection-count-badge" id="selection-count-badge">0</span>
+                <span id="selection-summary-text" style="font-weight: 500; font-size: 0.875rem;">datas selecionadas</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button type="button" class="btn-cancel-selection" onclick="clearSelection()">Limpar</button>
+                <button type="button" class="btn-agendar-selecao" onclick="goToTurmasNovoWithSelection()">
+                    <span>Agendar Turma nestas Datas</span>
+                    <span>→</span>
+                </button>
             </div>
         </div>
 
@@ -1538,8 +1689,85 @@ ob_start();
         }, 120);
     }
 
+    // Modo Seleção de Múltiplas Datas (Ticket 09)
+    let modoSelecaoAtivo = false;
+    let selectedDates = new Set();
+
+    function toggleModoSelecao() {
+        modoSelecaoAtivo = !modoSelecaoAtivo;
+        const btn = document.getElementById('btn-toggle-selecao');
+        const container = document.querySelector('.cal-container');
+
+        if (btn) btn.classList.toggle('active', modoSelecaoAtivo);
+        if (container) container.classList.toggle('selection-mode-active', modoSelecaoAtivo);
+
+        if (!modoSelecaoAtivo) {
+            clearSelection();
+        } else {
+            updateSelectionUI();
+        }
+    }
+
+    function updateSelectionUI() {
+        const sorted = Array.from(selectedDates).sort();
+
+        // Limpa destaque e ordinais anteriores
+        document.querySelectorAll('.cal-day-cell').forEach(cell => {
+            cell.classList.remove('day-selected');
+            const badge = cell.querySelector('.ordinal-badge');
+            if (badge) badge.remove();
+        });
+
+        // Aplica destaque e numeração ordinal ordenada cronologicamente
+        sorted.forEach((d, index) => {
+            const cells = document.querySelectorAll(`.cal-day-cell[data-date="${d}"]`);
+            cells.forEach(cell => {
+                cell.classList.add('day-selected');
+                const topBar = cell.querySelector('.day-top-bar');
+                if (topBar) {
+                    const badge = document.createElement('span');
+                    badge.className = 'ordinal-badge';
+                    badge.textContent = `${index + 1}º Dia`;
+                    topBar.appendChild(badge);
+                }
+            });
+        });
+
+        const bar = document.getElementById('floating-selection-bar');
+        if (bar) {
+            if (sorted.length > 0 && modoSelecaoAtivo) {
+                bar.style.display = 'flex';
+                document.getElementById('selection-count-badge').textContent = sorted.length;
+                document.getElementById('selection-summary-text').textContent = sorted.length === 1 ? '1 dia selecionado' : `${sorted.length} dias selecionados`;
+            } else {
+                bar.style.display = 'none';
+            }
+        }
+    }
+
+    function clearSelection() {
+        selectedDates.clear();
+        updateSelectionUI();
+    }
+
+    function goToTurmasNovoWithSelection() {
+        const sorted = Array.from(selectedDates).sort();
+        if (sorted.length === 0) return;
+        window.location.href = '/diario/turmas/novo?datas=' + encodeURIComponent(sorted.join(','));
+    }
+
     // Clique no Dia
     function handleDayClick(dateStr, cellEl) {
+        if (modoSelecaoAtivo) {
+            if (selectedDates.has(dateStr)) {
+                selectedDates.delete(dateStr);
+            } else {
+                selectedDates.add(dateStr);
+            }
+            updateSelectionUI();
+            return;
+        }
+
         const rawData = cellEl.getAttribute('data-popover');
         if (rawData) {
             try {

@@ -29,6 +29,10 @@ AddDefaultCharset UTF-8
     # Rota do Modo Aula (Chamada em Tempo Real)
     RewriteRule ^aula/?$ aula.php [L,QSA]
 
+    # Rotas de Cadastro e Edição de Turmas (Ticket 09)
+    RewriteRule ^turmas/novo/?$ turma_form.php [L,QSA]
+    RewriteRule ^turma/editar(?:/([0-9]+))?/?$ turma_form.php?id=$1 [L,QSA]
+
     # Rota de Turmas e Diário Ativo
     RewriteRule ^turmas/?$ turmas.php [L,QSA]
 

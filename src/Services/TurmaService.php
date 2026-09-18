@@ -390,4 +390,484 @@ class TurmaService
 
         return $turma ?: null;
     }
+
+    /**
+     * Inferência bidirecional inteligente de horários livres para turno padrão.
+     * M: Matutino, V: Vespertino, N: Noturno, D: Dia Todo / Integral.
+     */
+    public static function inferTurnoFromHorarios(?string $horarioInicio, ?string $horarioFim, string $defaultTurno = 'V'): string
+    {
+        if (empty($horarioInicio) || empty($horarioFim)) {
+            return strtoupper($defaultTurno);
+        }
+
+        $hIni = trim($horarioInicio);
+        $hFim = trim($horarioFim);
+
+        $partsIni = explode(':', $hIni);
+        $partsFim = explode(':', $hFim);
+
+        if (count($partsIni) < 2 || count($partsFim) < 2) {
+            return strtoupper($defaultTurno);
+        }
+
+        $minIni = (int)$partsIni[0] * 60 + (int)$partsIni[1];
+        $minFim = (int)$partsFim[0] * 60 + (int)$partsFim[1];
+
+        if ($minFim <= $minIni) {
+            return strtoupper($defaultTurno);
+        }
+
+        $duracao = $minFim - $minIni;
+
+        // Se duração >= 6h (360min) ou inicia de manhã (< 12:00 / 720min) e termina após 14:00 (840min) -> Dia Todo [D]
+        if ($duracao >= 360 || ($minIni < 720 && $minFim > 840)) {
+            return 'D';
+        }
+
+        // Noturno [N]: início a partir das 18:00 (1080min)
+        if ($minIni >= 1080) {
+            return 'N';
+        }
+
+        // Vespertino [V]: início entre 12:00 e 17:59 (720min a 1079min)
+        // Cobre: 13:00 - 17:00, 14:00 - 16:00, 14:00 - 18:00 etc.
+        if ($minIni >= 720 && $minIni < 1080) {
+            return 'V';
+        }
+
+        // Matutino [M]: início antes das 12:00 (720min)
+        if ($minIni < 720) {
+            return 'M';
+        }
+
+        return strtoupper($defaultTurno);
+    }
+
+    /**
+     * Retorna os horários de início e término padrão para cada turno.
+     */
+    public static function getTurnoDefaultHorarios(string $turno): array
+    {
+        $t = strtoupper(trim($turno));
+        return match ($t) {
+            'M' => ['horario_inicio' => '08:00', 'horario_fim' => '12:00'],
+            'V' => ['horario_inicio' => '14:00', 'horario_fim' => '18:00'],
+            'N' => ['horario_inicio' => '18:30', 'horario_fim' => '22:30'],
+            'D' => ['horario_inicio' => '08:00', 'horario_fim' => '17:00'],
+            default => ['horario_inicio' => '14:00', 'horario_fim' => '18:00'],
+        };
+    }
+
+    /**
+     * Normaliza e ordena cronologicamente uma lista de datas vindas do Modo Seleção (ex: query string).
+     */
+    public static function parseSelectedDates(string $datasQuery): array
+    {
+        $raw = explode(',', $datasQuery);
+        $valid = [];
+        foreach ($raw as $d) {
+            $clean = trim($d);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $clean)) {
+                $valid[] = $clean;
+            }
+        }
+        $valid = array_unique($valid);
+        sort($valid);
+        return array_values($valid);
+    }
+
+    /**
+     * Cria uma nova turma com suporte a 0 alunos (desacoplada) e grade customizada de encontros.
+     */
+    public function createTurma(array $dadosTurma, array $encontros = []): int
+    {
+        $this->ensureSchema();
+
+        $cursoNome = trim((string)($dadosTurma['curso_nome'] ?? ''));
+        if (empty($cursoNome)) {
+            throw new InvalidArgumentException("O nome do curso é obrigatório.");
+        }
+
+        $codigoTurma = trim((string)($dadosTurma['codigo_turma'] ?? ''));
+        if (empty($codigoTurma)) {
+            $codigoTurma = 'TURMA-' . date('Ymd') . '-' . substr(bin2hex(random_bytes(3)), 0, 5);
+        }
+
+        $chaveAcesso = trim((string)($dadosTurma['chave_acesso'] ?? ''));
+        if (empty($chaveAcesso)) {
+            $slug = strtolower((string)preg_replace('/[^a-z0-9]/', '', iconv('UTF-8', 'ASCII//TRANSLIT', $cursoNome) ?: $cursoNome));
+            if (empty($slug)) {
+                $slug = 'turma';
+            }
+            $chaveAcesso = substr($slug, 0, 16) . '-' . rand(100, 999);
+        }
+
+        $turnoPadrao = strtoupper(trim((string)($dadosTurma['turno_padrao'] ?? 'V')));
+        if (!in_array($turnoPadrao, ['M', 'V', 'N', 'D'], true)) {
+            $turnoPadrao = 'V';
+        }
+
+        // Calcula limites de datas a partir dos encontros ou campos diretos
+        $datasEncontros = [];
+        foreach ($encontros as $e) {
+            if (!empty($e['data_encontro'])) {
+                $datasEncontros[] = trim((string)$e['data_encontro']);
+            }
+        }
+        sort($datasEncontros);
+
+        $dataInicio = !empty($datasEncontros) ? $datasEncontros[0] : trim((string)($dadosTurma['data_inicio'] ?? date('Y-m-d')));
+        $dataConclusao = !empty($datasEncontros) ? end($datasEncontros) : trim((string)($dadosTurma['data_conclusao'] ?? $dataInicio));
+
+        // Determinação inteligente de status
+        $status = trim((string)($dadosTurma['status'] ?? ''));
+        if (empty($status)) {
+            $hoje = date('Y-m-d');
+            $status = ($dataInicio <= $hoje) ? 'em_andamento' : 'prevista';
+        }
+
+        $cargaHoraria = (int)($dadosTurma['carga_horaria'] ?? 0);
+        $modalidade = trim((string)($dadosTurma['modalidade'] ?? 'Presencial'));
+        $clienteNome = trim((string)($dadosTurma['cliente_nome'] ?? '')) ?: null;
+        $ordemServico = trim((string)($dadosTurma['ordem_servico'] ?? '')) ?: null;
+        $cidade = trim((string)($dadosTurma['cidade'] ?? 'Goiânia - GO')) ?: null;
+        $instrutor = trim((string)($dadosTurma['instrutor'] ?? '')) ?: null;
+        $ementa = trim((string)($dadosTurma['ementa'] ?? '')) ?: null;
+
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare("
+                INSERT INTO turmas (
+                    codigo_turma, curso_nome, cliente_nome, ordem_servico,
+                    modalidade, carga_horaria, data_inicio, data_conclusao,
+                    turno_padrao, status, chave_acesso, cidade, instrutor, ementa
+                ) VALUES (
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?
+                )
+            ");
+            $stmt->execute([
+                $codigoTurma, $cursoNome, $clienteNome, $ordemServico,
+                $modalidade, $cargaHoraria, $dataInicio, $dataConclusao,
+                $turnoPadrao, $status, $chaveAcesso, $cidade, $instrutor, $ementa
+            ]);
+
+            $turmaId = (int)$this->pdo->lastInsertId();
+
+            // Insere encontros com overrides individuais
+            $numEnc = 1;
+            $stmtEnc = $this->pdo->prepare("
+                INSERT INTO encontros (
+                    turma_id, numero_encontro, data_encontro, turno,
+                    horario_inicio, horario_fim, conteudo_previsto, tipo
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+
+            foreach ($encontros as $enc) {
+                $dEnc = trim((string)($enc['data_encontro'] ?? ''));
+                if (empty($dEnc)) {
+                    continue;
+                }
+
+                $hIni = trim((string)($enc['horario_inicio'] ?? ''));
+                $hFim = trim((string)($enc['horario_fim'] ?? ''));
+
+                // Turno: usa o informado ou infere pelos horários livres
+                $tEnc = !empty($enc['turno']) ? strtoupper(trim((string)$enc['turno'])) : self::inferTurnoFromHorarios($hIni, $hFim, $turnoPadrao);
+                if (!in_array($tEnc, ['M', 'V', 'N', 'D'], true)) {
+                    $tEnc = $turnoPadrao;
+                }
+
+                // Horários padrões se vazios
+                if (empty($hIni) || empty($hFim)) {
+                    $padroes = self::getTurnoDefaultHorarios($tEnc);
+                    $hIni = $hIni ?: $padroes['horario_inicio'];
+                    $hFim = $hFim ?: $padroes['horario_fim'];
+                }
+
+                $numAtual = isset($enc['numero_encontro']) && (int)$enc['numero_encontro'] > 0 ? (int)$enc['numero_encontro'] : $numEnc;
+                $conteudo = trim((string)($enc['conteudo_previsto'] ?? '')) ?: null;
+                $tipo = trim((string)($enc['tipo'] ?? 'aula')) ?: 'aula';
+
+                $stmtEnc->execute([
+                    $turmaId, $numAtual, $dEnc, $tEnc,
+                    $hIni, $hFim, $conteudo, $tipo
+                ]);
+
+                $numEnc++;
+            }
+
+            $this->pdo->commit();
+            return $turmaId;
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw new RuntimeException("Falha ao criar turma: " . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * Atualiza dados de uma turma existente.
+     */
+    public function updateTurma(int $turmaId, array $dados): bool
+    {
+        $this->ensureSchema();
+
+        $fields = [];
+        $params = [];
+
+        $allowed = [
+            'curso_nome', 'cliente_nome', 'ordem_servico', 'modalidade',
+            'cliente_tipo', 'cliente_cidade', 'cliente_uf', 'cliente_cnpj',
+            'tipo_cobranca', 'valor_hora_aula', 'valor_total', 'carga_horaria',
+            'carga_horaria_extenso', 'data_inicio', 'data_conclusao', 'turno_padrao',
+            'status', 'chave_acesso', 'portal_certificados_modo', 'instrutor',
+            'cidade', 'ementa'
+        ];
+
+        foreach ($allowed as $f) {
+            if (array_key_exists($f, $dados)) {
+                $fields[] = "{$f} = ?";
+                $params[] = $dados[$f] !== '' ? $dados[$f] : null;
+            }
+        }
+
+        if (empty($fields)) {
+            return false;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $fields[] = "updated_at = ?";
+        $params[] = $now;
+        $params[] = $turmaId;
+
+        $sql = "UPDATE turmas SET " . implode(', ', $fields) . " WHERE id = ?";
+        $stmt = $this->pdo->prepare($sql);
+        return $stmt->execute($params);
+    }
+
+    /**
+     * Recalcula data_inicio e data_conclusao da turma com base nos encontros ativos.
+     */
+    public function recalculateTurmaDates(int $turmaId): void
+    {
+        $stmt = $this->pdo->prepare("
+            SELECT MIN(data_encontro) as min_d, MAX(data_encontro) as max_d 
+            FROM encontros 
+            WHERE turma_id = ? AND deleted_at IS NULL
+        ");
+        $stmt->execute([$turmaId]);
+        $bounds = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($bounds && !empty($bounds['min_d'])) {
+            $now = date('Y-m-d H:i:s');
+            $up = $this->pdo->prepare("UPDATE turmas SET data_inicio = ?, data_conclusao = ?, updated_at = ? WHERE id = ?");
+            $up->execute([$bounds['min_d'], $bounds['max_d'], $now, $turmaId]);
+        }
+    }
+
+    /**
+     * Adiciona um encontro avulso ou de reposição à turma.
+     */
+    public function addEncontro(int $turmaId, array $encontroData): int
+    {
+        $this->ensureSchema();
+
+        $dataEncontro = trim((string)($encontroData['data_encontro'] ?? ''));
+        if (empty($dataEncontro)) {
+            throw new InvalidArgumentException("Data do encontro é obrigatória.");
+        }
+
+        // Descobre o próximo número de encontro disponível
+        $stmtNum = $this->pdo->prepare("SELECT COALESCE(MAX(numero_encontro), 0) + 1 FROM encontros WHERE turma_id = ?");
+        $stmtNum->execute([$turmaId]);
+        $proxNum = (int)$stmtNum->fetchColumn();
+
+        $hIni = trim((string)($encontroData['horario_inicio'] ?? ''));
+        $hFim = trim((string)($encontroData['horario_fim'] ?? ''));
+        $turno = !empty($encontroData['turno']) ? strtoupper(trim((string)$encontroData['turno'])) : self::inferTurnoFromHorarios($hIni, $hFim);
+
+        if (empty($hIni) || empty($hFim)) {
+            $padroes = self::getTurnoDefaultHorarios($turno);
+            $hIni = $hIni ?: $padroes['horario_inicio'];
+            $hFim = $hFim ?: $padroes['horario_fim'];
+        }
+
+        $tipo = trim((string)($encontroData['tipo'] ?? 'aula')) ?: 'aula';
+        $conteudo = trim((string)($encontroData['conteudo_previsto'] ?? '')) ?: null;
+
+        $stmt = $this->pdo->prepare("
+            INSERT INTO encontros (
+                turma_id, numero_encontro, data_encontro, turno,
+                horario_inicio, horario_fim, conteudo_previsto, tipo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $turmaId, $proxNum, $dataEncontro, $turno,
+            $hIni, $hFim, $conteudo, $tipo
+        ]);
+
+        $novoId = (int)$this->pdo->lastInsertId();
+        $this->recalculateTurmaDates($turmaId);
+
+        return $novoId;
+    }
+
+    /**
+     * Atualiza um encontro individual (override de data, turno, horários ou plano).
+     */
+    public function updateEncontro(int $encontroId, array $encontroData): bool
+    {
+        $this->ensureSchema();
+
+        $stmt = $this->pdo->prepare("SELECT turma_id FROM encontros WHERE id = ?");
+        $stmt->execute([$encontroId]);
+        $turmaId = (int)$stmt->fetchColumn();
+
+        if ($turmaId <= 0) {
+            throw new InvalidArgumentException("Encontro ID {$encontroId} não encontrado.");
+        }
+
+        $fields = [];
+        $params = [];
+
+        $hIni = isset($encontroData['horario_inicio']) ? trim((string)$encontroData['horario_inicio']) : null;
+        $hFim = isset($encontroData['horario_fim']) ? trim((string)$encontroData['horario_fim']) : null;
+
+        if (isset($encontroData['data_encontro'])) {
+            $fields[] = "data_encontro = ?";
+            $params[] = trim((string)$encontroData['data_encontro']);
+        }
+        if (isset($encontroData['horario_inicio'])) {
+            $fields[] = "horario_inicio = ?";
+            $params[] = $hIni ?: null;
+        }
+        if (isset($encontroData['horario_fim'])) {
+            $fields[] = "horario_fim = ?";
+            $params[] = $hFim ?: null;
+        }
+        if (isset($encontroData['turno'])) {
+            $t = strtoupper(trim((string)$encontroData['turno']));
+            $fields[] = "turno = ?";
+            $params[] = $t;
+        } elseif ($hIni && $hFim) {
+            $fields[] = "turno = ?";
+            $params[] = self::inferTurnoFromHorarios($hIni, $hFim);
+        }
+        if (isset($encontroData['conteudo_previsto'])) {
+            $fields[] = "conteudo_previsto = ?";
+            $params[] = trim((string)$encontroData['conteudo_previsto']) ?: null;
+        }
+        if (isset($encontroData['conteudo_ministrado'])) {
+            $fields[] = "conteudo_ministrado = ?";
+            $params[] = trim((string)$encontroData['conteudo_ministrado']) ?: null;
+        }
+        if (isset($encontroData['tipo'])) {
+            $fields[] = "tipo = ?";
+            $params[] = trim((string)$encontroData['tipo']) ?: 'aula';
+        }
+
+        if (empty($fields)) {
+            return false;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $fields[] = "updated_at = ?";
+        $params[] = $now;
+        $params[] = $encontroId;
+
+        $sql = "UPDATE encontros SET " . implode(', ', $fields) . " WHERE id = ?";
+        $stmtUpdate = $this->pdo->prepare($sql);
+        $ok = $stmtUpdate->execute($params);
+
+        if ($ok) {
+            $this->recalculateTurmaDates($turmaId);
+        }
+
+        return $ok;
+    }
+
+    /**
+     * Exclui um encontro pendente. Se já houver chamadas registradas em frequencias, bloqueia.
+     */
+    public function deleteEncontro(int $encontroId): array
+    {
+        $this->ensureSchema();
+
+        $stmt = $this->pdo->prepare("SELECT turma_id, numero_encontro FROM encontros WHERE id = ?");
+        $stmt->execute([$encontroId]);
+        $enc = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$enc) {
+            return ['success' => false, 'message' => "Encontro ID {$encontroId} não encontrado."];
+        }
+
+        $turmaId = (int)$enc['turma_id'];
+
+        // Blindagem: verificar se há presenças registradas
+        $stmtFreq = $this->pdo->prepare("SELECT COUNT(*) FROM frequencias WHERE encontro_id = ?");
+        $stmtFreq->execute([$encontroId]);
+        $totalFreq = (int)$stmtFreq->fetchColumn();
+
+        if ($totalFreq > 0) {
+            return [
+                'success' => false,
+                'message' => "Não é possível excluir o Encontro {$enc['numero_encontro']}: ele já possui {$totalFreq} registro(s) de chamada/presença gravados no diário.",
+            ];
+        }
+
+        $del = $this->pdo->prepare("DELETE FROM encontros WHERE id = ?");
+        $ok = $del->execute([$encontroId]);
+
+        if ($ok) {
+            $this->recalculateTurmaDates($turmaId);
+            return ['success' => true, 'message' => "Encontro {$enc['numero_encontro']} excluído com sucesso."];
+        }
+
+        return ['success' => false, 'message' => "Falha ao excluir o encontro no banco de dados."];
+    }
+
+    /**
+     * Verifica e atualiza o ciclo de vida da turma:
+     * Transiciona de 'prevista' para 'em_andamento' automaticamente se a data do primeiro encontro for hoje ou passada.
+     */
+    public function checkAndTransitionLifecycle(?int $turmaId = null, ?string $currentDate = null): int
+    {
+        $this->ensureSchema();
+        $hoje = $currentDate ?? date('Y-m-d');
+        $now = date('Y-m-d H:i:s');
+
+        $query = "
+            SELECT t.id, t.status, 
+                   COALESCE(MIN(e.data_encontro), t.data_inicio) as primeira_data
+            FROM turmas t
+            LEFT JOIN encontros e ON e.turma_id = t.id AND e.deleted_at IS NULL
+            WHERE t.status = 'prevista' AND t.deleted_at IS NULL
+        ";
+
+        if ($turmaId !== null && $turmaId > 0) {
+            $query .= " AND t.id = " . (int)$turmaId;
+        }
+
+        $query .= " GROUP BY t.id";
+
+        $rows = $this->pdo->query($query)->fetchAll(PDO::FETCH_ASSOC);
+        $count = 0;
+
+        $stmtUp = $this->pdo->prepare("UPDATE turmas SET status = 'em_andamento', updated_at = ? WHERE id = ?");
+
+        foreach ($rows as $r) {
+            $pData = $r['primeira_data'];
+            if (!empty($pData) && $hoje >= $pData) {
+                $stmtUp->execute([$now, $r['id']]);
+                $count++;
+            }
+        }
+
+        return $count;
+    }
 }
+

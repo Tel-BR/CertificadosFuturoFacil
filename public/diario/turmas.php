@@ -26,6 +26,7 @@ $pdo = Database::getConnection();
 $attendanceService = new AttendanceService($pdo);
 $calendarService = new CalendarService($pdo);
 $turmaService = new TurmaService($pdo, $calendarService);
+$turmaService->checkAndTransitionLifecycle();
 
 // Redirecionamento amigável se encontro_id for fornecido
 if (isset($_GET['encontro_id']) && (int)$_GET['encontro_id'] > 0) {
@@ -306,7 +307,11 @@ ob_start();
         </p>
     </div>
     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <a href="/diario/calendario" class="btn-new-schedule" style="background: var(--surface); color: var(--primary); border: 1px solid var(--border); box-shadow: none;">
+        <a href="/diario/turmas/novo" class="btn-new-schedule" style="background: var(--primary); color: #FFFFFF; border: none; text-decoration: none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>+ Nova Turma</span>
+        </a>
+        <a href="/diario/calendario" class="btn-new-schedule" style="background: var(--surface); color: var(--primary); border: 1px solid var(--border); box-shadow: none; text-decoration: none;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <span>Ver Calendário</span>
         </a>

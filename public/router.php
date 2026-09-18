@@ -91,6 +91,19 @@ if ($uri === '/diario' || $uri === '/diario/') {
     exit;
 }
 
+if (preg_match('#^/diario/turmas/novo/?$#', $uri)) {
+    require $publicDir . '/diario/turma_form.php';
+    exit;
+}
+
+if (preg_match('#^/diario/turma/editar(?:/(\d+))?/?$#', $uri, $matches)) {
+    if (!empty($matches[1])) {
+        $_GET['id'] = (int)$matches[1];
+    }
+    require $publicDir . '/diario/turma_form.php';
+    exit;
+}
+
 if (preg_match('#^/diario/([a-zA-Z0-9_-]+)/?$#', $uri, $matches)) {
     $targetScript = $publicDir . '/diario/' . $matches[1] . '.php';
     if (is_file($targetScript)) {
