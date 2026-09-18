@@ -83,11 +83,120 @@ if (isset($_GET['action']) && $_GET['action'] === 'export') {
 
 // -------------------------------------------------------------
 // AÇÃO: Importação e Sincronização via Upload de Planilha (.xlsx)
+// Fluxo com Prévia de Diff Visual, Preservação e Confirmação Atômica
 // -------------------------------------------------------------
 $feedbackMessage = null;
 $feedbackType = 'success';
 $inconformidadesList = [];
+$activeDiff = null;
+$pendingSyncToken = null;
 
+// Tratamento de cancelamento explícito via GET
+if (isset($_GET['cancel_sync'])) {
+    if (isset($_SESSION['pending_sync'][$turmaId])) {
+        if (!empty($_SESSION['pending_sync'][$turmaId]['tmp_path']) && file_exists($_SESSION['pending_sync'][$turmaId]['tmp_path'])) {
+            @unlink($_SESSION['pending_sync'][$turmaId]['tmp_path']);
+        }
+        unset($_SESSION['pending_sync'][$turmaId]);
+    }
+    $feedbackMessage = 'Sincronização cancelada. Nenhuma alteração foi realizada no banco de dados.';
+    $feedbackType = 'info';
+}
+
+// 1. Prévia em Memória e Geração de Diff Visual (preview_sync)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'preview_sync') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido ou expirado. Por favor, tente novamente.';
+        $feedbackType = 'danger';
+    } elseif (!isset($_FILES['planilha']) || $_FILES['planilha']['error'] !== UPLOAD_ERR_OK) {
+        $feedbackMessage = 'Nenhum arquivo válido foi selecionado para upload.';
+        $feedbackType = 'danger';
+    } else {
+        $uploadedFile = $_FILES['planilha']['tmp_name'];
+        $origName = $_FILES['planilha']['name'];
+
+        if (!str_ends_with(strtolower($origName), '.xlsx')) {
+            $feedbackMessage = 'Formato de arquivo inválido. Apenas planilhas Excel no formato .xlsx são suportadas.';
+            $feedbackType = 'danger';
+        } else {
+            try {
+                $activeDiff = $excelSyncService->generateDiff($turmaId, $uploadedFile);
+
+                // Persiste cópia temporária para aplicação na confirmação explícita
+                $tempPersistPath = tempnam(sys_get_temp_dir(), 'ff_sync_pending_');
+                copy($uploadedFile, $tempPersistPath);
+
+                $pendingSyncToken = bin2hex(random_bytes(16));
+                $_SESSION['pending_sync'][$turmaId] = [
+                    'token'    => $pendingSyncToken,
+                    'tmp_path' => $tempPersistPath,
+                    'filename' => $origName,
+                    'diff'     => $activeDiff,
+                ];
+            } catch (Throwable $e) {
+                $feedbackMessage = 'Falha ao analisar a planilha enviada: ' . $e->getMessage();
+                $feedbackType = 'danger';
+            }
+        }
+    }
+}
+
+// 2. Aplicação Atômica após Confirmação Explícita (apply_sync)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'apply_sync') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    $syncToken = $_POST['sync_token'] ?? '';
+    $pending = $_SESSION['pending_sync'][$turmaId] ?? null;
+
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido ou expirado. Por favor, tente novamente.';
+        $feedbackType = 'danger';
+    } elseif (!$pending || empty($pending['tmp_path']) || !file_exists($pending['tmp_path']) || $pending['token'] !== $syncToken) {
+        $feedbackMessage = 'Sessão de sincronização expirada ou inválida. Por favor, realize o upload novamente.';
+        $feedbackType = 'danger';
+    } else {
+        try {
+            $importResult = $excelSyncService->importTurmaSpreadsheet($turmaId, $pending['tmp_path']);
+
+            @unlink($pending['tmp_path']);
+            unset($_SESSION['pending_sync'][$turmaId]);
+
+            $feedbackMessage = sprintf(
+                'Sincronização aplicada com sucesso! %d aluno(s) atualizados, %d novo(s) inseridos, %d presenças sincronizadas e %d plano(s) de aula atualizados.',
+                $importResult['alunos_atualizados'],
+                $importResult['alunos_inseridos'],
+                $importResult['presencas_atualizadas'],
+                $importResult['encontros_atualizados']
+            );
+            $feedbackType = 'success';
+
+            if (!empty($importResult['inconformidades'])) {
+                $inconformidadesList = $importResult['inconformidades'];
+            }
+
+            // Recarrega dados atualizados da turma
+            $stmtTurma->execute([$turmaId]);
+            $turma = $stmtTurma->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $feedbackMessage = 'Falha ao aplicar a sincronização no banco de dados: ' . $e->getMessage();
+            $feedbackType = 'danger';
+        }
+    }
+}
+
+// 3. Cancelamento via POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cancel_sync') {
+    if (isset($_SESSION['pending_sync'][$turmaId])) {
+        if (!empty($_SESSION['pending_sync'][$turmaId]['tmp_path']) && file_exists($_SESSION['pending_sync'][$turmaId]['tmp_path'])) {
+            @unlink($_SESSION['pending_sync'][$turmaId]['tmp_path']);
+        }
+        unset($_SESSION['pending_sync'][$turmaId]);
+    }
+    $feedbackMessage = 'Sincronização cancelada. Nenhuma alteração foi realizada no banco de dados.';
+    $feedbackType = 'info';
+}
+
+// 4. Importação direta legada (para retrocompatibilidade com scripts e testes)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'import') {
     $csrfToken = $_POST['csrf_token'] ?? '';
     if (!AuthService::verifyCsrfToken($csrfToken)) {
@@ -128,6 +237,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $feedbackType = 'danger';
             }
         }
+    }
+}
+
+// Restaura prévia pendente se houver na sessão
+if ($activeDiff === null && isset($_SESSION['pending_sync'][$turmaId])) {
+    $pending = $_SESSION['pending_sync'][$turmaId];
+    if (!empty($pending['tmp_path']) && file_exists($pending['tmp_path'])) {
+        $activeDiff = $pending['diff'];
+        $pendingSyncToken = $pending['token'];
+    } else {
+        unset($_SESSION['pending_sync'][$turmaId]);
     }
 }
 
@@ -1092,6 +1212,176 @@ function copiarMensagemWhatsappTurma() {
 }
 </script>
 
+<?php if (!empty($activeDiff)): ?>
+<!-- Card de Prévia com Diff Visual (Ticket 11) -->
+<div class="diff-preview-card" style="background: #FFFFFF; border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+        <div>
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; background: rgba(14, 116, 144, 0.1); color: var(--primary);">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                </span>
+                <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--dark); margin: 0;">
+                    Prévia de Sincronização — Diff Visual
+                </h3>
+            </div>
+            <p style="font-size: 0.875rem; color: var(--slate); margin: 0.4rem 0 0 0;">
+                A planilha foi analisada em memória. Confira todas as inserções, atualizações e reagendamentos antes de confirmar a gravação no banco.
+            </p>
+        </div>
+    </div>
+
+    <?php if (!empty($activeDiff['resumo']['preservacao_alunos_ativa'])): ?>
+    <div style="background: rgba(14, 116, 144, 0.08); border-left: 4px solid var(--primary); padding: 0.875rem 1.25rem; border-radius: 6px; margin-bottom: 1.25rem; font-size: 0.875rem; color: var(--dark);">
+        <strong>Regra Estrita de Preservação Ativa:</strong>
+        <?= htmlspecialchars((string)($activeDiff['resumo']['preservacao_aviso'] ?? 'Aba de alunos vazia detectada. Todos os alunos e chamadas foram mantidos intactos no banco de dados.'), ENT_QUOTES, 'UTF-8') ?>
+    </div>
+    <?php endif; ?>
+
+    <!-- Bento de Contadores do Diff -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.875rem; margin-bottom: 1.5rem;">
+        <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 0.875rem 1rem;">
+            <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--slate);">Novos Alunos</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: #10B981; margin-top: 0.25rem;"><?= (int)$activeDiff['resumo']['total_novos_alunos'] ?></div>
+        </div>
+        <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 0.875rem 1rem;">
+            <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--slate);">Alunos a Atualizar</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: var(--primary); margin-top: 0.25rem;"><?= (int)$activeDiff['resumo']['total_atualizar_alunos'] ?></div>
+        </div>
+        <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 0.875rem 1rem;">
+            <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--slate);">Alunos Inalterados</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: var(--slate); margin-top: 0.25rem;"><?= (int)$activeDiff['resumo']['total_inalterados_alunos'] ?></div>
+        </div>
+        <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 0.875rem 1rem;">
+            <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--slate);">Aulas Reagendadas</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: #EA580C; margin-top: 0.25rem;"><?= (int)$activeDiff['resumo']['total_encontros_alterados'] ?></div>
+        </div>
+        <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: 8px; padding: 0.875rem 1rem;">
+            <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--slate);">Inconformidades</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: <?= (int)$activeDiff['resumo']['total_inconformidades'] > 0 ? '#EF4444' : 'var(--slate)' ?>; margin-top: 0.25rem;"><?= (int)$activeDiff['resumo']['total_inconformidades'] ?></div>
+        </div>
+    </div>
+
+    <!-- Detalhamento Expansível -->
+    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <?php if (!empty($activeDiff['alunos']['novos'])): ?>
+        <details style="background: #FAFCFF; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem;" open>
+            <summary style="font-weight: 700; font-size: 0.875rem; color: #10B981; cursor: pointer;">
+                Novos Alunos a Cadastrar (<?= count($activeDiff['alunos']['novos']) ?>)
+            </summary>
+            <div style="margin-top: 0.75rem; font-size: 0.8125rem;">
+                <ul style="margin: 0; padding-left: 1.25rem;">
+                    <?php foreach ($activeDiff['alunos']['novos'] as $na): ?>
+                    <li style="margin-bottom: 0.25rem;">
+                        <strong><?= htmlspecialchars($na['nome'], ENT_QUOTES, 'UTF-8') ?></strong>
+                        <span style="color: var(--slate); margin-left: 0.5rem;">CPF: <?= htmlspecialchars($na['cpf'] ?? '—', ENT_QUOTES, 'UTF-8') ?></span>
+                        <span style="color: var(--slate); font-size: 0.75rem;">(Linha <?= (int)$na['linha'] ?>)</span>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </details>
+        <?php endif; ?>
+
+        <?php if (!empty($activeDiff['alunos']['atualizar'])): ?>
+        <details style="background: #FAFCFF; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem;" open>
+            <summary style="font-weight: 700; font-size: 0.875rem; color: var(--primary); cursor: pointer;">
+                Alunos Existentes a Atualizar (<?= count($activeDiff['alunos']['atualizar']) ?>)
+            </summary>
+            <div style="margin-top: 0.75rem; font-size: 0.8125rem;">
+                <ul style="margin: 0; padding-left: 1.25rem;">
+                    <?php foreach ($activeDiff['alunos']['atualizar'] as $aa): ?>
+                    <li style="margin-bottom: 0.35rem;">
+                        <strong><?= htmlspecialchars($aa['nome_novo'], ENT_QUOTES, 'UTF-8') ?></strong>
+                        <?php if (!empty($aa['mudancas'])): ?>
+                            <span style="color: var(--slate); margin-left: 0.5rem;">
+                            <?php foreach ($aa['mudancas'] as $m): ?>
+                                [<?= htmlspecialchars($m['campo']) ?>: <?= htmlspecialchars((string)$m['anterior']) ?> &rarr; <?= htmlspecialchars((string)$m['novo']) ?>]
+                            <?php endforeach; ?>
+                            </span>
+                        <?php endif; ?>
+                        <?php if (!empty($aa['presencas_alteradas'])): ?>
+                            <span style="color: #EA580C; margin-left: 0.5rem;">(<?= count($aa['presencas_alteradas']) ?> presença(s) alterada(s))</span>
+                        <?php endif; ?>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </details>
+        <?php endif; ?>
+
+        <?php if (!empty($activeDiff['encontros']['alterados'])): ?>
+        <details style="background: #FAFCFF; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem;" open>
+            <summary style="font-weight: 700; font-size: 0.875rem; color: #EA580C; cursor: pointer;">
+                Aulas e Planos com Alterações / Reagendamento (<?= count($activeDiff['encontros']['alterados']) ?>)
+            </summary>
+            <div style="margin-top: 0.75rem; font-size: 0.8125rem;">
+                <ul style="margin: 0; padding-left: 1.25rem;">
+                    <?php foreach ($activeDiff['encontros']['alterados'] as $ea): ?>
+                    <li style="margin-bottom: 0.5rem;">
+                        <strong>Encontro <?= (int)$ea['numero'] ?>:</strong>
+                        <?= htmlspecialchars(date('d/m/Y', strtotime($ea['data_atual']))) ?> &rarr; <span style="font-weight: 700; color: #EA580C;"><?= htmlspecialchars(date('d/m/Y', strtotime($ea['data_nova']))) ?></span>
+                        <span style="color: var(--slate); margin-left: 0.5rem;">(<?= htmlspecialchars($ea['horario_novo']) ?>)</span>
+                        <?php if (!empty($ea['reagendamento_com_chamada'])): ?>
+                        <div style="margin-top: 0.25rem; color: var(--primary); font-size: 0.75rem; font-weight: 600;">
+                            [Selo de Seguranca] <?= htmlspecialchars((string)$ea['aviso']) ?>
+                        </div>
+                        <?php endif; ?>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </details>
+        <?php endif; ?>
+
+        <?php if (!empty($activeDiff['inconformidades'])): ?>
+        <details style="background: #FFF5F5; border: 1px solid #FED7D7; border-radius: 8px; padding: 0.75rem 1rem;" open>
+            <summary style="font-weight: 700; font-size: 0.875rem; color: #E53E3E; cursor: pointer;">
+                Inconformidades Cadastrais (<?= count($activeDiff['inconformidades']) ?>)
+            </summary>
+            <div style="margin-top: 0.75rem; font-size: 0.8125rem;">
+                <ul style="margin: 0; padding-left: 1.25rem; color: #9B2C2C;">
+                    <?php foreach ($activeDiff['inconformidades'] as $inc): ?>
+                    <li>
+                        Linha <?= (int)$inc['linha'] ?>: <strong><?= htmlspecialchars($inc['nome']) ?></strong> — <?= htmlspecialchars($inc['motivo']) ?>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </details>
+        <?php endif; ?>
+
+        <?php if (!empty($activeDiff['alunos']['ausentes_preservados']) && empty($activeDiff['resumo']['aba_alunos_vazia'])): ?>
+        <details style="background: #FAFCFF; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem;">
+            <summary style="font-weight: 600; font-size: 0.8125rem; color: var(--slate); cursor: pointer;">
+                Alunos Ausentes na Planilha (Mantidos Intactos no Banco: <?= count($activeDiff['alunos']['ausentes_preservados']) ?>)
+            </summary>
+            <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--slate);">
+                <?php foreach ($activeDiff['alunos']['ausentes_preservados'] as $ap): ?>
+                    <span style="display: inline-block; margin-right: 0.75rem;"><?= htmlspecialchars($ap['nome']) ?></span>
+                <?php endforeach; ?>
+            </div>
+        </details>
+        <?php endif; ?>
+    </div>
+
+    <!-- Barra de Ações Explícitas -->
+    <div style="display: flex; gap: 1rem; align-items: center; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border);">
+        <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="margin: 0;">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="action" value="apply_sync">
+            <input type="hidden" name="sync_token" value="<?= htmlspecialchars((string)$pendingSyncToken, ENT_QUOTES, 'UTF-8') ?>">
+            <button type="submit" class="btn-export-excel" style="background: var(--primary); border: none; font-size: 0.875rem; padding: 0.65rem 1.25rem; cursor: pointer;">
+                <span>Confirmar e Aplicar Sincronização</span>
+            </button>
+        </form>
+        <a href="/diario/turma?turma_id=<?= $turmaId ?>&cancel_sync=1" class="btn-cancel-sync" style="display: inline-flex; align-items: center; color: var(--slate); font-weight: 600; font-size: 0.875rem; padding: 0.65rem 1.25rem; border: 1px solid var(--border); border-radius: 8px; text-decoration: none;">
+            <span>Cancelar</span>
+        </a>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Card de Sincronização e Download/Upload Excel -->
 <div class="sync-actions-card">
     <div class="sync-text">
@@ -1105,7 +1395,8 @@ function copiarMensagemWhatsappTurma() {
     </div>
     <div class="sync-buttons">
         <a href="/diario/fechamento?turma_id=<?= $turmaId ?>" class="btn-fechamento" style="display: inline-flex; align-items: center; gap: 0.5rem; background: var(--primary); color: #FFFFFF; font-weight: 700; font-size: 0.875rem; padding: 0.65rem 1.15rem; border-radius: 8px; text-decoration: none; box-shadow: 0 2px 4px rgba(14, 116, 144, 0.2);" title="Abrir Fechamento Assistido e Emissão de Certificados">
-            <span>🎓 Fechamento & Certificados</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+            <span>Fechamento &amp; Certificados</span>
         </a>
         <a href="/diario/turma?turma_id=<?= $turmaId ?>&action=export" class="btn-export-excel" title="Baixar planilha Excel desta turma">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1121,7 +1412,7 @@ function copiarMensagemWhatsappTurma() {
     <div id="uploadBox" class="upload-box">
         <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" enctype="multipart/form-data" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
-            <input type="hidden" name="action" value="import">
+            <input type="hidden" name="action" value="preview_sync">
             <div>
                 <label style="display: block; font-size: 0.8125rem; font-weight: 700; color: var(--dark); margin-bottom: 0.25rem;">
                     Selecione o arquivo Excel editado (.xlsx):
@@ -1129,7 +1420,7 @@ function copiarMensagemWhatsappTurma() {
                 <input type="file" name="planilha" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required style="font-size: 0.875rem;">
             </div>
             <button type="submit" class="btn-export-excel" style="background: var(--primary);">
-                <span>Enviar e Sincronizar</span>
+                <span>Analisar e Ver Prévia</span>
             </button>
         </form>
     </div>

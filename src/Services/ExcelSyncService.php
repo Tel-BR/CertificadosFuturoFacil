@@ -10,8 +10,13 @@ namespace FuturoFacil\Services;
 
 require_once __DIR__ . '/ValidatorService.php';
 require_once __DIR__ . '/AttendanceService.php';
+require_once __DIR__ . '/CalendarService.php';
+require_once __DIR__ . '/TurmaService.php';
 
 use FuturoFacil\Config\Database;
+use FuturoFacil\Services\ValidatorService;
+use FuturoFacil\Services\CalendarService;
+use FuturoFacil\Services\TurmaService;
 use InvalidArgumentException;
 use PDO;
 use RuntimeException;
@@ -183,10 +188,562 @@ class ExcelSyncService
     }
 
     /**
+     * Analisa uma planilha Excel em memória comparando com o estado atual do banco de dados,
+     * sem persistir nenhuma alteração. Retorna um relatório estruturado de Diff Visual.
+     */
+    public function generateDiff(int $turmaId, string $filePathOrContent): array
+    {
+        $sheetsData = $this->parseXlsx($filePathOrContent);
+
+        $sheetAlunos = null;
+        $sheetPlanos = null;
+        $sheetDados = null;
+
+        foreach ($sheetsData as $sheetName => $rows) {
+            $normName = mb_strtolower(trim($sheetName), 'UTF-8');
+            if (str_contains($normName, 'aluno') || str_contains($normName, 'chamada')) {
+                $sheetAlunos = $rows;
+            } elseif (str_contains($normName, 'plano') || str_contains($normName, 'diario') || str_contains($normName, 'diário')) {
+                $sheetPlanos = $rows;
+            } elseif (str_contains($normName, 'dado') || str_contains($normName, 'turma')) {
+                $sheetDados = $rows;
+            }
+        }
+
+        if (!$sheetAlunos) {
+            $keys = array_keys($sheetsData);
+            if (isset($keys[0])) $sheetAlunos = $sheetsData[$keys[0]];
+            if (isset($keys[1])) $sheetPlanos = $sheetsData[$keys[1]];
+            if (isset($keys[2])) $sheetDados = $sheetsData[$keys[2]];
+        }
+
+        // Consulta dados atuais da turma
+        $stmtTurma = $this->pdo->prepare("SELECT * FROM turmas WHERE id = ?");
+        $stmtTurma->execute([$turmaId]);
+        $turmaAtual = $stmtTurma->fetch(PDO::FETCH_ASSOC);
+        if (!$turmaAtual) {
+            throw new InvalidArgumentException("Turma ID {$turmaId} não encontrada.");
+        }
+
+        // -------------------------------------------------------------
+        // 1. DIFF ABA 3: Dados da Turma (Metadados)
+        // -------------------------------------------------------------
+        $metaAlterados = [];
+        $metaInalterados = [];
+        if (!empty($sheetDados)) {
+            $metaMap = [];
+            foreach ($sheetDados as $r) {
+                if (count($r) >= 2) {
+                    $k = mb_strtolower(trim((string)$r[0]), 'UTF-8');
+                    $metaMap[$k] = trim((string)$r[1]);
+                }
+            }
+
+            $fieldsToCheck = [
+                'nome do curso'     => ['campo' => 'curso_nome', 'label' => 'Nome do Curso'],
+                'cliente'           => ['campo' => 'cliente_nome', 'label' => 'Cliente'],
+                'instrutor'         => ['campo' => 'instrutor', 'label' => 'Instrutor'],
+                'carga horária (h)' => ['campo' => 'carga_horaria', 'label' => 'Carga Horária (h)', 'type' => 'int'],
+                'ementa oficial'    => ['campo' => 'ementa', 'label' => 'Ementa Oficial'],
+            ];
+
+            foreach ($fieldsToCheck as $excelKey => $meta) {
+                if (isset($metaMap[$excelKey]) && $metaMap[$excelKey] !== '') {
+                    $novoVal = $metaMap[$excelKey];
+                    $dbVal = (string)($turmaAtual[$meta['campo']] ?? '');
+                    if (($meta['type'] ?? '') === 'int') {
+                        $novoVal = (int)$novoVal;
+                        $dbVal = (int)$dbVal;
+                    }
+                    if ($novoVal != $dbVal) {
+                        $metaAlterados[] = [
+                            'campo'    => $meta['label'],
+                            'anterior' => $dbVal,
+                            'novo'     => $novoVal,
+                        ];
+                    } else {
+                        $metaInalterados[] = [
+                            'campo' => $meta['label'],
+                            'valor' => $dbVal,
+                        ];
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // 2. DIFF ABA 2: Encontros, Planos e Reagendamento Seguro
+        // -------------------------------------------------------------
+        $stmtEnc = $this->pdo->prepare("
+            SELECT * FROM encontros 
+            WHERE turma_id = ? 
+            ORDER BY numero_encontro ASC
+        ");
+        $stmtEnc->execute([$turmaId]);
+        $currentEncontros = $stmtEnc->fetchAll(PDO::FETCH_ASSOC);
+
+        $encMapByNum = [];
+        $encIds = [];
+        foreach ($currentEncontros as $e) {
+            $encMapByNum[(int)$e['numero_encontro']] = $e;
+            $encIds[] = (int)$e['id'];
+        }
+
+        // Consulta contagem de presenças já gravadas por encontro
+        $freqCountByEnc = [];
+        if (!empty($encIds)) {
+            $inClause = implode(',', $encIds);
+            $stmtFreqCount = $this->pdo->query("
+                SELECT encontro_id, COUNT(*) as total_freq, SUM(CASE WHEN presente = 1 THEN 1 ELSE 0 END) as total_presentes
+                FROM frequencias 
+                WHERE encontro_id IN ({$inClause})
+                GROUP BY encontro_id
+            ");
+            foreach ($stmtFreqCount->fetchAll(PDO::FETCH_ASSOC) as $fc) {
+                $freqCountByEnc[(int)$fc['encontro_id']] = [
+                    'total'     => (int)$fc['total_freq'],
+                    'presentes' => (int)$fc['total_presentes'],
+                ];
+            }
+        }
+
+        $encontrosAlterados = [];
+        $encontrosInalterados = [];
+        $totalReagendamentosSeguros = 0;
+        $matchedEncNums = [];
+
+        if (!empty($sheetPlanos) && count($sheetPlanos) > 1) {
+            $headerP = array_map(fn($h) => mb_strtolower(trim((string)$h), 'UTF-8'), $sheetPlanos[0]);
+            $colEncIdx = $this->findColumnIndex($headerP, ['encontro', 'nº encontro', 'nº']);
+            $colPrevIdx = $this->findColumnIndex($headerP, ['conteúdo previsto', 'conteudo previsto', 'previsto']);
+            $colMinIdx = $this->findColumnIndex($headerP, ['conteúdo ministrado', 'conteudo ministrado', 'ministrado']);
+            $colDataIdx = $this->findColumnIndex($headerP, ['data', 'data da aula']);
+            $colHoraIniIdx = $this->findColumnIndex($headerP, ['horário início', 'horario inicio', 'horário inicio', 'horario início']);
+            $colHoraFimIdx = $this->findColumnIndex($headerP, ['horário fim', 'horario fim', 'horário término', 'horario termino']);
+
+            for ($i = 1; $i < count($sheetPlanos); $i++) {
+                $row = $sheetPlanos[$i];
+                if (empty($row) || !isset($row[$colEncIdx])) {
+                    continue;
+                }
+                $numEnc = (int)preg_replace('/\D/', '', (string)$row[$colEncIdx]);
+                if ($numEnc <= 0 || !isset($encMapByNum[$numEnc])) {
+                    continue;
+                }
+
+                $matchedEncNums[$numEnc] = true;
+                $dbEnc = $encMapByNum[$numEnc];
+                $encId = (int)$dbEnc['id'];
+                $hasChamadas = isset($freqCountByEnc[$encId]) && $freqCountByEnc[$encId]['total'] > 0;
+                $totalChamadas = $hasChamadas ? $freqCountByEnc[$encId]['total'] : 0;
+                $totalPresentes = $hasChamadas ? $freqCountByEnc[$encId]['presentes'] : 0;
+
+                $dataEnc = ($colDataIdx !== -1 && isset($row[$colDataIdx])) ? trim((string)$row[$colDataIdx]) : null;
+                if ($dataEnc && preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $dataEnc, $m)) {
+                    $dataEnc = sprintf('%04d-%02d-%02d', (int)$m[3], (int)$m[2], (int)$m[1]);
+                }
+
+                $horaIni = ($colHoraIniIdx !== -1 && isset($row[$colHoraIniIdx])) ? trim((string)$row[$colHoraIniIdx]) : null;
+                if ($horaIni && preg_match('/^(\d{1,2}):(\d{2})/', $horaIni, $m)) {
+                    $horaIni = sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]);
+                }
+
+                $horaFim = ($colHoraFimIdx !== -1 && isset($row[$colHoraFimIdx])) ? trim((string)$row[$colHoraFimIdx]) : null;
+                if ($horaFim && preg_match('/^(\d{1,2}):(\d{2})/', $horaFim, $m)) {
+                    $horaFim = sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]);
+                }
+
+                $conteudoPrevisto = ($colPrevIdx !== -1 && isset($row[$colPrevIdx])) ? trim((string)$row[$colPrevIdx]) : null;
+                $conteudoMinistrado = ($colMinIdx !== -1 && isset($row[$colMinIdx])) ? trim((string)$row[$colMinIdx]) : null;
+
+                $mudancasEnc = [];
+                $dataMudou = false;
+                $horarioMudou = false;
+
+                if ($dataEnc !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataEnc) && $dataEnc !== $dbEnc['data_encontro']) {
+                    $mudancasEnc[] = [
+                        'campo'    => 'Data',
+                        'anterior' => $dbEnc['data_encontro'],
+                        'novo'     => $dataEnc,
+                    ];
+                    $dataMudou = true;
+                }
+
+                if ($horaIni !== null && !empty($horaIni) && substr((string)$dbEnc['horario_inicio'], 0, 5) !== substr($horaIni, 0, 5)) {
+                    $mudancasEnc[] = [
+                        'campo'    => 'Horário Início',
+                        'anterior' => substr((string)$dbEnc['horario_inicio'], 0, 5),
+                        'novo'     => substr($horaIni, 0, 5),
+                    ];
+                    $horarioMudou = true;
+                }
+
+                if ($horaFim !== null && !empty($horaFim) && substr((string)$dbEnc['horario_fim'], 0, 5) !== substr($horaFim, 0, 5)) {
+                    $mudancasEnc[] = [
+                        'campo'    => 'Horário Fim',
+                        'anterior' => substr((string)$dbEnc['horario_fim'], 0, 5),
+                        'novo'     => substr($horaFim, 0, 5),
+                    ];
+                    $horarioMudou = true;
+                }
+
+                if ($conteudoPrevisto !== null && $conteudoPrevisto !== '' && $conteudoPrevisto !== (string)$dbEnc['conteudo_previsto']) {
+                    $mudancasEnc[] = [
+                        'campo'    => 'Conteúdo Previsto',
+                        'anterior' => (string)$dbEnc['conteudo_previsto'],
+                        'novo'     => $conteudoPrevisto,
+                    ];
+                }
+
+                if ($conteudoMinistrado !== null && $conteudoMinistrado !== '' && $conteudoMinistrado !== (string)$dbEnc['conteudo_ministrado']) {
+                    $mudancasEnc[] = [
+                        'campo'    => 'Conteúdo Ministrado',
+                        'anterior' => (string)$dbEnc['conteudo_ministrado'],
+                        'novo'     => $conteudoMinistrado,
+                    ];
+                }
+
+                if (!empty($mudancasEnc)) {
+                    $isReagendamentoSeguro = ($dataMudou || $horarioMudou) && $hasChamadas;
+                    if ($isReagendamentoSeguro) {
+                        $totalReagendamentosSeguros++;
+                    }
+
+                    $aviso = null;
+                    if ($isReagendamentoSeguro) {
+                        $aviso = "Reagendamento Seguro: Aula com chamada já realizada ({$totalChamadas} presenças registradas). As presenças e conteúdos ministrados serão 100% preservados na nova data.";
+                    }
+
+                    $encontrosAlterados[] = [
+                        'id'                        => $encId,
+                        'numero'                    => $numEnc,
+                        'data_atual'                => $dbEnc['data_encontro'],
+                        'data_nova'                 => $dataEnc ?? $dbEnc['data_encontro'],
+                        'horario_atual'             => substr((string)$dbEnc['horario_inicio'], 0, 5) . ' - ' . substr((string)$dbEnc['horario_fim'], 0, 5),
+                        'horario_novo'              => ($horaIni ? substr($horaIni, 0, 5) : substr((string)$dbEnc['horario_inicio'], 0, 5)) . ' - ' . ($horaFim ? substr($horaFim, 0, 5) : substr((string)$dbEnc['horario_fim'], 0, 5)),
+                        'reagendamento_com_chamada' => $isReagendamentoSeguro,
+                        'total_presencas'           => $totalChamadas,
+                        'total_presentes'           => $totalPresentes,
+                        'aviso'                     => $aviso,
+                        'mudancas'                  => $mudancasEnc,
+                    ];
+                } else {
+                    $encontrosInalterados[] = [
+                        'id'      => $encId,
+                        'numero'  => $numEnc,
+                        'data'    => $dbEnc['data_encontro'],
+                        'horario' => substr((string)$dbEnc['horario_inicio'], 0, 5) . ' - ' . substr((string)$dbEnc['horario_fim'], 0, 5),
+                    ];
+                }
+            }
+        }
+
+        foreach ($currentEncontros as $dbEnc) {
+            $n = (int)$dbEnc['numero_encontro'];
+            if (!isset($matchedEncNums[$n])) {
+                $encontrosInalterados[] = [
+                    'id'      => (int)$dbEnc['id'],
+                    'numero'  => $n,
+                    'data'    => $dbEnc['data_encontro'],
+                    'horario' => substr((string)$dbEnc['horario_inicio'], 0, 5) . ' - ' . substr((string)$dbEnc['horario_fim'], 0, 5),
+                ];
+            }
+        }
+
+        // -------------------------------------------------------------
+        // 3. DIFF ABA 1: Alunos, Presenças e Regra de Preservação
+        // -------------------------------------------------------------
+        $stmtCurrentAlunos = $this->pdo->prepare("
+            SELECT id, nome_completo, cpf, cpf_limpo 
+            FROM alunos 
+            WHERE turma_id = ?
+            ORDER BY nome_completo ASC
+        ");
+        $stmtCurrentAlunos->execute([$turmaId]);
+        $currentAlunos = $stmtCurrentAlunos->fetchAll(PDO::FETCH_ASSOC);
+
+        $alunosById = [];
+        $alunosByCpf = [];
+        $alunosByNome = [];
+        $alunoIdsList = [];
+        foreach ($currentAlunos as $ca) {
+            $aId = (int)$ca['id'];
+            $alunosById[$aId] = $ca;
+            $alunoIdsList[] = $aId;
+            if (!empty($ca['cpf_limpo'])) {
+                $alunosByCpf[$ca['cpf_limpo']] = $aId;
+            }
+            $alunosByNome[mb_strtolower(trim((string)$ca['nome_completo']), 'UTF-8')] = $aId;
+        }
+
+        $currentFreqMatrix = [];
+        if (!empty($alunoIdsList)) {
+            $inAlunos = implode(',', $alunoIdsList);
+            $stmtFreqs = $this->pdo->query("
+                SELECT encontro_id, aluno_id, presente 
+                FROM frequencias 
+                WHERE aluno_id IN ({$inAlunos})
+            ");
+            foreach ($stmtFreqs->fetchAll(PDO::FETCH_ASSOC) as $fr) {
+                $currentFreqMatrix[(int)$fr['aluno_id']][(int)$fr['encontro_id']] = (int)$fr['presente'];
+            }
+        }
+
+        $isAlunosEmpty = true;
+        if (!empty($sheetAlunos) && count($sheetAlunos) > 1) {
+            $headerTmp = $sheetAlunos[0];
+            $colNomeTmp = $this->findColumnIndex(array_map('strval', $headerTmp), ['nome']);
+            if ($colNomeTmp === -1) $colNomeTmp = 1;
+            for ($k = 1; $k < count($sheetAlunos); $k++) {
+                $row = $sheetAlunos[$k];
+                if (!empty($row) && isset($row[$colNomeTmp])) {
+                    $nomeVal = preg_replace('/\s+/', ' ', trim((string)$row[$colNomeTmp]));
+                    if ($nomeVal !== '') {
+                        $isAlunosEmpty = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        $alunosNovos = [];
+        $alunosAtualizar = [];
+        $alunosInalterados = [];
+        $alunosAusentesPreservados = [];
+        $inconformidades = [];
+        $matchedAlunoIds = [];
+        $abaAlunosVazia = $isAlunosEmpty;
+        $preservacaoAlunosAtiva = $isAlunosEmpty;
+        $preservacaoAviso = null;
+
+        if ($isAlunosEmpty) {
+            $preservacaoAviso = "Aba de alunos vazia detectada. Regra Estrita de Preservação ativada: 100% dos " . count($currentAlunos) . " aluno(s) cadastrados no banco de dados e seus históricos de chamada serão mantidos intactos.";
+            foreach ($currentAlunos as $ca) {
+                $alunosAusentesPreservados[] = [
+                    'id'   => (int)$ca['id'],
+                    'nome' => $ca['nome_completo'],
+                    'cpf'  => $ca['cpf'],
+                ];
+                $alunosInalterados[] = [
+                    'id'   => (int)$ca['id'],
+                    'nome' => $ca['nome_completo'],
+                    'cpf'  => $ca['cpf'],
+                ];
+            }
+        } else {
+            $headerA = $sheetAlunos[0];
+            $colIdIdx = -1;
+            $colNomeIdx = -1;
+            $colCpfIdx = -1;
+            $encontroCols = [];
+
+            foreach ($headerA as $idx => $colHeader) {
+                $normCol = mb_strtolower(trim((string)$colHeader), 'UTF-8');
+                if ($normCol === 'id' || str_contains($normCol, 'id aluno') || str_contains($normCol, 'id banco')) {
+                    $colIdIdx = $idx;
+                } elseif (str_contains($normCol, 'nome')) {
+                    $colNomeIdx = $idx;
+                } elseif (str_contains($normCol, 'cpf')) {
+                    $colCpfIdx = $idx;
+                } elseif (preg_match('/(?:encontro|aula)\s*#?(\d+)/i', (string)$colHeader, $m)) {
+                    $num = (int)$m[1];
+                    if (isset($encMapByNum[$num])) {
+                        $encontroCols[$idx] = (int)$encMapByNum[$num]['id'];
+                    }
+                } elseif (str_contains($normCol, 'freq') || str_contains($normCol, 'frequência')) {
+                    // informativa
+                } elseif ($idx >= 3 && count($currentEncontros) > 0) {
+                    $offset = $idx - 3;
+                    if (isset($currentEncontros[$offset])) {
+                        $encontroCols[$idx] = (int)$currentEncontros[$offset]['id'];
+                    }
+                }
+            }
+
+            if ($colNomeIdx === -1) $colNomeIdx = 1;
+            if ($colCpfIdx === -1) $colCpfIdx = 2;
+
+            for ($rowIdx = 1; $rowIdx < count($sheetAlunos); $rowIdx++) {
+                $row = $sheetAlunos[$rowIdx];
+                $excelLineNum = $rowIdx + 1;
+
+                if (empty($row) || !isset($row[$colNomeIdx])) {
+                    continue;
+                }
+
+                $rawNome = (string)($row[$colNomeIdx] ?? '');
+                $nomeSanitizado = preg_replace('/\s+/', ' ', trim($rawNome));
+                if (empty($nomeSanitizado)) {
+                    continue;
+                }
+
+                $rawCpf = (string)($row[$colCpfIdx] ?? '');
+                $cpfSanitizado = trim($rawCpf);
+                $cpfLimpo = ValidatorService::cleanCpf($cpfSanitizado);
+
+                $cpfValido = true;
+                if (!empty($cpfLimpo)) {
+                    if (strlen($cpfLimpo) !== 11 || !ValidatorService::validateCpf($cpfLimpo)) {
+                        $cpfValido = false;
+                        $inconformidades[] = [
+                            'linha'   => $excelLineNum,
+                            'nome'    => $nomeSanitizado,
+                            'cpf'     => $cpfSanitizado,
+                            'motivo'  => "CPF '{$cpfSanitizado}' matematicamente inválido (dígitos verificadores inconsistentes pelo algoritmo módulo 11).",
+                        ];
+                    }
+                }
+
+                $alunoId = null;
+                if ($colIdIdx !== -1 && isset($row[$colIdIdx]) && is_numeric($row[$colIdIdx])) {
+                    $possibleId = (int)$row[$colIdIdx];
+                    if (isset($alunosById[$possibleId])) {
+                        $alunoId = $possibleId;
+                    }
+                }
+
+                if ($alunoId === null && !empty($cpfLimpo) && isset($alunosByCpf[$cpfLimpo])) {
+                    $alunoId = $alunosByCpf[$cpfLimpo];
+                }
+
+                if ($alunoId === null) {
+                    $normBusca = mb_strtolower($nomeSanitizado, 'UTF-8');
+                    if (isset($alunosByNome[$normBusca])) {
+                        $alunoId = $alunosByNome[$normBusca];
+                    }
+                }
+
+                $cpfFormatado = (!empty($cpfLimpo) && $cpfValido) ? ValidatorService::formatCpf($cpfLimpo) : $cpfSanitizado;
+
+                if ($alunoId !== null) {
+                    $matchedAlunoIds[$alunoId] = true;
+                    $dbAluno = $alunosById[$alunoId];
+                    $mudancasAluno = [];
+
+                    if ($nomeSanitizado !== $dbAluno['nome_completo']) {
+                        $mudancasAluno[] = [
+                            'campo'    => 'Nome Completo',
+                            'anterior' => $dbAluno['nome_completo'],
+                            'novo'     => $nomeSanitizado,
+                        ];
+                    }
+
+                    if ($cpfValido && !empty($cpfLimpo) && $cpfLimpo !== ($dbAluno['cpf_limpo'] ?? '')) {
+                        $mudancasAluno[] = [
+                            'campo'    => 'CPF',
+                            'anterior' => $dbAluno['cpf'] ?? '—',
+                            'novo'     => $cpfFormatado,
+                        ];
+                    }
+
+                    $presencasAlteradas = [];
+                    foreach ($encontroCols as $cIdx => $encId) {
+                        if (!isset($row[$cIdx])) {
+                            continue;
+                        }
+                        $rawVal = trim((string)$row[$cIdx]);
+                        if ($rawVal === '') {
+                            continue;
+                        }
+                        $novoStatus = $this->normalizePresenceValue($rawVal);
+                        $statusAtual = $currentFreqMatrix[$alunoId][$encId] ?? null;
+
+                        if ($statusAtual === null || $novoStatus !== $statusAtual) {
+                            $presencasAlteradas[] = [
+                                'encontro_id' => $encId,
+                                'anterior'    => $statusAtual === 1 ? 'Presente' : ($statusAtual === 0 ? 'Falta' : 'Não registrada'),
+                                'novo'        => $novoStatus === 1 ? 'Presente' : 'Falta',
+                            ];
+                        }
+                    }
+
+                    if (!empty($mudancasAluno) || !empty($presencasAlteradas)) {
+                        $alunosAtualizar[] = [
+                            'id'                  => $alunoId,
+                            'nome_atual'          => $dbAluno['nome_completo'],
+                            'nome_novo'           => $nomeSanitizado,
+                            'cpf_atual'           => $dbAluno['cpf'],
+                            'cpf_novo'            => $cpfFormatado,
+                            'mudancas'            => $mudancasAluno,
+                            'presencas_alteradas' => $presencasAlteradas,
+                        ];
+                    } else {
+                        $alunosInalterados[] = [
+                            'id'   => $alunoId,
+                            'nome' => $dbAluno['nome_completo'],
+                            'cpf'  => $dbAluno['cpf'],
+                        ];
+                    }
+                } else {
+                    if (!$cpfValido) {
+                        continue;
+                    }
+
+                    $alunosNovos[] = [
+                        'linha' => $excelLineNum,
+                        'nome'  => $nomeSanitizado,
+                        'cpf'   => $cpfFormatado,
+                    ];
+                }
+            }
+
+            foreach ($currentAlunos as $ca) {
+                $aId = (int)$ca['id'];
+                if (!isset($matchedAlunoIds[$aId])) {
+                    $alunosAusentesPreservados[] = [
+                        'id'   => $aId,
+                        'nome' => $ca['nome_completo'],
+                        'cpf'  => $ca['cpf'],
+                    ];
+                    $alunosInalterados[] = [
+                        'id'   => $aId,
+                        'nome' => $ca['nome_completo'],
+                        'cpf'  => $ca['cpf'],
+                    ];
+                }
+            }
+        }
+
+        return [
+            'turma_id' => $turmaId,
+            'resumo'   => [
+                'total_novos_alunos'          => count($alunosNovos),
+                'total_atualizar_alunos'      => count($alunosAtualizar),
+                'total_inalterados_alunos'    => count($alunosInalterados),
+                'total_ausentes_preservados'  => count($alunosAusentesPreservados),
+                'total_encontros_alterados'   => count($encontrosAlterados),
+                'total_encontros_inalterados' => count($encontrosInalterados),
+                'total_reagendamentos_seguros'=> $totalReagendamentosSeguros,
+                'total_inconformidades'       => count($inconformidades),
+                'aba_alunos_vazia'            => $abaAlunosVazia,
+                'preservacao_alunos_ativa'    => $preservacaoAlunosAtiva,
+                'preservacao_aviso'           => $preservacaoAviso,
+            ],
+            'alunos' => [
+                'novos'                => $alunosNovos,
+                'atualizar'            => $alunosAtualizar,
+                'inalterados'          => $alunosInalterados,
+                'ausentes_preservados' => $alunosAusentesPreservados,
+            ],
+            'encontros' => [
+                'alterados'   => $encontrosAlterados,
+                'inalterados' => $encontrosInalterados,
+            ],
+            'turma_metadados' => [
+                'alterados'   => $metaAlterados,
+                'inalterados' => $metaInalterados,
+            ],
+            'inconformidades' => $inconformidades,
+        ];
+    }
+
+    /**
      * Importa e sincroniza a planilha Excel de volta para a aplicação.
      * Aplica sanitização estrita com trim() em nomes e CPFs.
      * Garante idempotência sem duplicação de alunos ou registros de frequência.
-     * Reporta inconformidades cadastrais sem corromper o salvamento dos registros válidos.
+     * Aplica a Regra Estrita de Preservação para seções vazias.
+     * Aplica Reagendamento Seguro preservando histórico de chamadas e planos.
+     * Executa todas as atualizações sob transação atômica única no banco.
      */
     public function importTurmaSpreadsheet(int $turmaId, string $filePathOrContent): array
     {
@@ -216,8 +773,21 @@ class ExcelSyncService
             if (isset($keys[2])) $sheetDados = $sheetsData[$keys[2]];
         }
 
-        if (!$sheetAlunos) {
-            throw new InvalidArgumentException("A planilha enviada não contém a aba obrigatória 'Alunos e Chamada'.");
+        $isAlunosEmpty = true;
+        if (!empty($sheetAlunos) && count($sheetAlunos) > 1) {
+            $headerTmp = $sheetAlunos[0];
+            $colNomeTmp = $this->findColumnIndex(array_map('strval', $headerTmp), ['nome']);
+            if ($colNomeTmp === -1) $colNomeTmp = 1;
+            for ($k = 1; $k < count($sheetAlunos); $k++) {
+                $row = $sheetAlunos[$k];
+                if (!empty($row) && isset($row[$colNomeTmp])) {
+                    $nomeVal = preg_replace('/\s+/', ' ', trim((string)$row[$colNomeTmp]));
+                    if ($nomeVal !== '') {
+                        $isAlunosEmpty = false;
+                        break;
+                    }
+                }
+            }
         }
 
         $inconformidades = [];
@@ -239,6 +809,8 @@ class ExcelSyncService
             // -------------------------------------------------------------
             // PASSO A: Atualiza Metadados da Turma (Aba 3)
             // -------------------------------------------------------------
+            $dataInicioDefinidaAba3 = false;
+            $dataFimDefinidaAba3 = false;
             if (!empty($sheetDados)) {
                 $metaMap = [];
                 foreach ($sheetDados as $r) {
@@ -273,6 +845,7 @@ class ExcelSyncService
                     $params[] = $metaMap['ementa oficial'];
                 }
 
+                $dataInicioDefinidaAba3 = false;
                 $dataInicio = $metaMap['data de início'] ?? $metaMap['data de inicio'] ?? null;
                 if ($dataInicio !== null && $dataInicio !== '') {
                     if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $dataInicio, $m)) {
@@ -281,9 +854,11 @@ class ExcelSyncService
                     if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataInicio)) {
                         $updates[] = "data_inicio = ?";
                         $params[] = $dataInicio;
+                        $dataInicioDefinidaAba3 = true;
                     }
                 }
 
+                $dataFimDefinidaAba3 = false;
                 $dataFim = $metaMap['data de conclusão'] ?? $metaMap['data de conclusao'] ?? null;
                 if ($dataFim !== null && $dataFim !== '') {
                     if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $dataFim, $m)) {
@@ -292,6 +867,7 @@ class ExcelSyncService
                     if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataFim)) {
                         $updates[] = "data_conclusao = ?";
                         $params[] = $dataFim;
+                        $dataFimDefinidaAba3 = true;
                     }
                 }
 
@@ -351,7 +927,7 @@ class ExcelSyncService
                             $encUpdates[] = "conteudo_previsto = ?";
                             $encParams[] = $conteudoPrevisto;
                         }
-                        if ($conteudoMinistrado !== null) {
+                        if ($conteudoMinistrado !== null && $conteudoMinistrado !== '') {
                             $encUpdates[] = "conteudo_ministrado = ?";
                             $encParams[] = $conteudoMinistrado;
                         }
@@ -367,6 +943,12 @@ class ExcelSyncService
                             $encUpdates[] = "horario_fim = ?";
                             $encParams[] = sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]);
                         }
+                        if ($horaIni !== null || $horaFim !== null) {
+                            $hIniEfetivo = ($horaIni && preg_match('/^(\d{1,2}):(\d{2})/', $horaIni, $m)) ? sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]) : ($encRow['horario_inicio'] ?? '14:00:00');
+                            $hFimEfetivo = ($horaFim && preg_match('/^(\d{1,2}):(\d{2})/', $horaFim, $m)) ? sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]) : ($encRow['horario_fim'] ?? '18:00:00');
+                            $encUpdates[] = "turno = ?";
+                            $encParams[] = TurmaService::inferTurnoFromHorarios($hIniEfetivo, $hFimEfetivo);
+                        }
 
                         if (!empty($encUpdates)) {
                             $encUpdates[] = "updated_at = CURRENT_TIMESTAMP";
@@ -377,120 +959,138 @@ class ExcelSyncService
                         }
                     }
                 }
+
+                if ($encontrosAtualizados > 0 && (!$dataInicioDefinidaAba3 && !$dataFimDefinidaAba3)) {
+                    $turmaService = new TurmaService($this->pdo);
+                    $turmaService->recalculateTurmaDates($turmaId);
+                }
             }
 
             // -------------------------------------------------------------
             // PASSO C: Atualiza Alunos e Presenças (Aba 1)
             // -------------------------------------------------------------
-            $stmtAllEnc = $this->pdo->prepare("
-                SELECT id, numero_encontro, data_encontro 
-                FROM encontros 
-                WHERE turma_id = ? 
-                ORDER BY numero_encontro ASC
-            ");
-            $stmtAllEnc->execute([$turmaId]);
-            $turmaEncontros = $stmtAllEnc->fetchAll(PDO::FETCH_ASSOC);
+            if (!$isAlunosEmpty && !empty($sheetAlunos)) {
+                $stmtAllEnc = $this->pdo->prepare("
+                    SELECT id, numero_encontro, data_encontro 
+                    FROM encontros 
+                    WHERE turma_id = ? 
+                    ORDER BY numero_encontro ASC
+                ");
+                $stmtAllEnc->execute([$turmaId]);
+                $turmaEncontros = $stmtAllEnc->fetchAll(PDO::FETCH_ASSOC);
 
-            $encByNumero = [];
-            foreach ($turmaEncontros as $e) {
-                $encByNumero[(int)$e['numero_encontro']] = (int)$e['id'];
-            }
-
-            $headerA = $sheetAlunos[0];
-            $colNomeIdx = -1;
-            $colCpfIdx = -1;
-            $encontroCols = [];
-
-            foreach ($headerA as $idx => $colHeader) {
-                $normCol = mb_strtolower(trim((string)$colHeader), 'UTF-8');
-                if (str_contains($normCol, 'nome')) {
-                    $colNomeIdx = $idx;
-                } elseif (str_contains($normCol, 'cpf')) {
-                    $colCpfIdx = $idx;
-                } elseif (preg_match('/(?:encontro|aula)\s*#?(\d+)/i', (string)$colHeader, $m)) {
-                    $num = (int)$m[1];
-                    if (isset($encByNumero[$num])) {
-                        $encontroCols[$idx] = $encByNumero[$num];
-                    }
-                } elseif (str_contains($normCol, 'freq') || str_contains($normCol, 'frequência')) {
-                    // Ignora coluna de percentual de frequência informativa
-                } elseif ($idx >= 3 && count($turmaEncontros) > 0) {
-                    $offset = $idx - 3;
-                    if (isset($turmaEncontros[$offset])) {
-                        $encontroCols[$idx] = (int)$turmaEncontros[$offset]['id'];
-                    }
-                }
-            }
-
-            if ($colNomeIdx === -1) {
-                $colNomeIdx = 1;
-            }
-            if ($colCpfIdx === -1) {
-                $colCpfIdx = 2;
-            }
-
-            $stmtCurrentAlunos = $this->pdo->prepare("
-                SELECT id, nome_completo, cpf, cpf_limpo 
-                FROM alunos 
-                WHERE turma_id = ?
-            ");
-            $stmtCurrentAlunos->execute([$turmaId]);
-            $currentAlunos = $stmtCurrentAlunos->fetchAll(PDO::FETCH_ASSOC);
-
-            $alunosByCpf = [];
-            $alunosByNome = [];
-            foreach ($currentAlunos as $ca) {
-                if (!empty($ca['cpf_limpo'])) {
-                    $alunosByCpf[$ca['cpf_limpo']] = (int)$ca['id'];
-                }
-                $normNome = mb_strtolower(trim((string)$ca['nome_completo']), 'UTF-8');
-                $alunosByNome[$normNome] = (int)$ca['id'];
-            }
-
-            for ($rowIdx = 1; $rowIdx < count($sheetAlunos); $rowIdx++) {
-                $row = $sheetAlunos[$rowIdx];
-                $excelLineNum = $rowIdx + 1;
-
-                if (empty($row) || !isset($row[$colNomeIdx])) {
-                    continue;
+                $encByNumero = [];
+                foreach ($turmaEncontros as $e) {
+                    $encByNumero[(int)$e['numero_encontro']] = (int)$e['id'];
                 }
 
-                // Sanitização estrita (.strip() / trim()) em Nome e CPF
-                $rawNome = (string)($row[$colNomeIdx] ?? '');
-                $nomeSanitizado = preg_replace('/\s+/', ' ', trim($rawNome));
+                $headerA = $sheetAlunos[0];
+                $colIdIdx = -1;
+                $colNomeIdx = -1;
+                $colCpfIdx = -1;
+                $encontroCols = [];
 
-                if (empty($nomeSanitizado)) {
-                    continue;
-                }
-
-                $rawCpf = (string)($row[$colCpfIdx] ?? '');
-                $cpfSanitizado = trim($rawCpf);
-                $cpfLimpo = ValidatorService::cleanCpf($cpfSanitizado);
-
-                // Validação matemática do CPF
-                $cpfValido = true;
-                if (!empty($cpfLimpo)) {
-                    if (strlen($cpfLimpo) !== 11 || !ValidatorService::validateCpf($cpfLimpo)) {
-                        $cpfValido = false;
-                        $inconformidades[] = [
-                            'linha'   => $excelLineNum,
-                            'nome'    => $nomeSanitizado,
-                            'cpf'     => $cpfSanitizado,
-                            'motivo'  => "CPF '{$cpfSanitizado}' matematicamente inválido (dígitos verificadores inconsistentes pelo algoritmo módulo 11).",
-                        ];
+                foreach ($headerA as $idx => $colHeader) {
+                    $normCol = mb_strtolower(trim((string)$colHeader), 'UTF-8');
+                    if ($normCol === 'id' || str_contains($normCol, 'id aluno') || str_contains($normCol, 'id banco')) {
+                        $colIdIdx = $idx;
+                    } elseif (str_contains($normCol, 'nome')) {
+                        $colNomeIdx = $idx;
+                    } elseif (str_contains($normCol, 'cpf')) {
+                        $colCpfIdx = $idx;
+                    } elseif (preg_match('/(?:encontro|aula)\s*#?(\d+)/i', (string)$colHeader, $m)) {
+                        $num = (int)$m[1];
+                        if (isset($encByNumero[$num])) {
+                            $encontroCols[$idx] = $encByNumero[$num];
+                        }
+                    } elseif (str_contains($normCol, 'freq') || str_contains($normCol, 'frequência')) {
+                        // Ignora coluna de percentual de frequência informativa
+                    } elseif ($idx >= 3 && count($turmaEncontros) > 0) {
+                        $offset = $idx - 3;
+                        if (isset($turmaEncontros[$offset])) {
+                            $encontroCols[$idx] = (int)$turmaEncontros[$offset]['id'];
+                        }
                     }
                 }
 
-                // Correspondência de aluno existente para evitar duplicidade
-                $alunoId = null;
-                if (!empty($cpfLimpo) && isset($alunosByCpf[$cpfLimpo])) {
-                    $alunoId = $alunosByCpf[$cpfLimpo];
-                } else {
-                    $normBusca = mb_strtolower($nomeSanitizado, 'UTF-8');
-                    if (isset($alunosByNome[$normBusca])) {
-                        $alunoId = $alunosByNome[$normBusca];
-                    }
+                if ($colNomeIdx === -1) {
+                    $colNomeIdx = 1;
                 }
+                if ($colCpfIdx === -1) {
+                    $colCpfIdx = 2;
+                }
+
+                $stmtCurrentAlunos = $this->pdo->prepare("
+                    SELECT id, nome_completo, cpf, cpf_limpo 
+                    FROM alunos 
+                    WHERE turma_id = ?
+                ");
+                $stmtCurrentAlunos->execute([$turmaId]);
+                $currentAlunos = $stmtCurrentAlunos->fetchAll(PDO::FETCH_ASSOC);
+
+                $alunosById = [];
+                $alunosByCpf = [];
+                $alunosByNome = [];
+                foreach ($currentAlunos as $ca) {
+                    $alunosById[(int)$ca['id']] = (int)$ca['id'];
+                    if (!empty($ca['cpf_limpo'])) {
+                        $alunosByCpf[$ca['cpf_limpo']] = (int)$ca['id'];
+                    }
+                    $normNome = mb_strtolower(trim((string)$ca['nome_completo']), 'UTF-8');
+                    $alunosByNome[$normNome] = (int)$ca['id'];
+                }
+
+                for ($rowIdx = 1; $rowIdx < count($sheetAlunos); $rowIdx++) {
+                    $row = $sheetAlunos[$rowIdx];
+                    $excelLineNum = $rowIdx + 1;
+
+                    if (empty($row) || !isset($row[$colNomeIdx])) {
+                        continue;
+                    }
+
+                    // Sanitização estrita (.strip() / trim()) em Nome e CPF
+                    $rawNome = (string)($row[$colNomeIdx] ?? '');
+                    $nomeSanitizado = preg_replace('/\s+/', ' ', trim($rawNome));
+
+                    if (empty($nomeSanitizado)) {
+                        continue;
+                    }
+
+                    $rawCpf = (string)($row[$colCpfIdx] ?? '');
+                    $cpfSanitizado = trim($rawCpf);
+                    $cpfLimpo = ValidatorService::cleanCpf($cpfSanitizado);
+
+                    // Validação matemática do CPF
+                    $cpfValido = true;
+                    if (!empty($cpfLimpo)) {
+                        if (strlen($cpfLimpo) !== 11 || !ValidatorService::validateCpf($cpfLimpo)) {
+                            $cpfValido = false;
+                            $inconformidades[] = [
+                                'linha'   => $excelLineNum,
+                                'nome'    => $nomeSanitizado,
+                                'cpf'     => $cpfSanitizado,
+                                'motivo'  => "CPF '{$cpfSanitizado}' matematicamente inválido (dígitos verificadores inconsistentes pelo algoritmo módulo 11).",
+                            ];
+                        }
+                    }
+
+                    // Correspondência de aluno existente para evitar duplicidade
+                    $alunoId = null;
+                    if ($colIdIdx !== -1 && isset($row[$colIdIdx]) && is_numeric($row[$colIdIdx])) {
+                        $posId = (int)$row[$colIdIdx];
+                        if (isset($alunosById[$posId])) {
+                            $alunoId = $posId;
+                        }
+                    }
+                    if ($alunoId === null && !empty($cpfLimpo) && isset($alunosByCpf[$cpfLimpo])) {
+                        $alunoId = $alunosByCpf[$cpfLimpo];
+                    }
+                    if ($alunoId === null) {
+                        $normBusca = mb_strtolower($nomeSanitizado, 'UTF-8');
+                        if (isset($alunosByNome[$normBusca])) {
+                            $alunoId = $alunosByNome[$normBusca];
+                        }
+                    }
 
                 $cpfFormatado = (!empty($cpfLimpo) && $cpfValido) ? ValidatorService::formatCpf($cpfLimpo) : null;
                 $cpfMascarado = (!empty($cpfLimpo) && $cpfValido) ? ValidatorService::maskCpf($cpfLimpo) : '—';
@@ -578,6 +1178,7 @@ class ExcelSyncService
                     $presencasGravadas++;
                 }
             }
+        }
 
             $this->pdo->commit();
 
@@ -590,6 +1191,7 @@ class ExcelSyncService
                 'encontros_atualizados' => $encontrosAtualizados,
                 'inconformidades'       => $inconformidades,
                 'total_inconformidades' => count($inconformidades),
+                'preservacao_ativa'     => $isAlunosEmpty,
                 'mensagem'              => 'Sincronização bidirecional concluída com sucesso!'
             ];
         } catch (Throwable $e) {
