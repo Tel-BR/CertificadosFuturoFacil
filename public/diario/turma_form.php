@@ -45,7 +45,12 @@ if ($isEditing) {
     ");
     $stmtEnc->execute([$turmaId]);
     $encontros = $stmtEnc->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmtAlunosCount = $pdo->prepare("SELECT COUNT(*) FROM alunos WHERE turma_id = ?");
+    $stmtAlunosCount->execute([$turmaId]);
+    $totalAlunos = (int)$stmtAlunosCount->fetchColumn();
 } else {
+    $totalAlunos = 0;
     // Modo Criação: verifica se vieram datas pré-selecionadas pelo Modo Seleção do Calendário
     $datasQuery = trim((string)($_GET['datas'] ?? ''));
     if (!empty($datasQuery)) {
@@ -89,6 +94,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $ordemServico = trim((string)($_POST['ordem_servico'] ?? ''));
         $ementa = trim((string)($_POST['ementa'] ?? ''));
 
+        // Campos fiscais e de faturamento (Ticket 13)
+        $razaoSocial = trim((string)($_POST['razao_social'] ?? '')) ?: null;
+        $cnpjTomador = trim((string)($_POST['cnpj_tomador'] ?? '')) ?: null;
+        $cidadeUf = trim((string)($_POST['cidade_uf'] ?? '')) ?: null;
+        $emailFinanceiro = trim((string)($_POST['email_financeiro'] ?? '')) ?: null;
+        $numeroOsContrato = trim((string)($_POST['numero_os_contrato'] ?? '')) ?: null;
+        $tipoCobranca = trim((string)($_POST['tipo_cobranca'] ?? 'hora_aula')) ?: 'hora_aula';
+        $valorUnitario = isset($_POST['valor_unitario']) && $_POST['valor_unitario'] !== '' ? (float)$_POST['valor_unitario'] : 0.0;
+        $valorTotal = isset($_POST['valor_total']) && $_POST['valor_total'] !== '' ? (float)$_POST['valor_total'] : 0.0;
+
+        if (empty($clienteNome) && $razaoSocial) {
+            $clienteNome = $razaoSocial;
+        }
+        if (empty($ordemServico) && $numeroOsContrato) {
+            $ordemServico = $numeroOsContrato;
+        }
+
         // Processa grade de encontros submetida
         $postEncontros = $_POST['encontros'] ?? [];
         $gradeSubmetida = [];
@@ -118,17 +140,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($isEditing) {
                 // Atualiza dados cadastrais
                 $turmaService->updateTurma($turmaId, [
-                    'curso_nome'    => $cursoNome,
-                    'cliente_nome'  => $clienteNome ?: null,
-                    'modalidade'    => $modalidade,
-                    'cidade'        => $cidade ?: null,
-                    'carga_horaria' => $cargaHoraria,
-                    'status'        => $status,
-                    'turno_padrao'  => $turnoPadrao,
-                    'chave_acesso'  => $chaveAcesso,
-                    'instrutor'     => $instrutor ?: null,
-                    'ordem_servico' => $ordemServico ?: null,
-                    'ementa'        => $ementa ?: null,
+                    'curso_nome'         => $cursoNome,
+                    'cliente_nome'       => $clienteNome ?: null,
+                    'modalidade'         => $modalidade,
+                    'cidade'             => $cidade ?: null,
+                    'carga_horaria'      => $cargaHoraria,
+                    'status'             => $status,
+                    'turno_padrao'       => $turnoPadrao,
+                    'chave_acesso'       => $chaveAcesso,
+                    'instrutor'          => $instrutor ?: null,
+                    'ordem_servico'      => $ordemServico ?: null,
+                    'ementa'             => $ementa ?: null,
+                    'razao_social'       => $razaoSocial,
+                    'cnpj_tomador'       => $cnpjTomador,
+                    'cidade_uf'          => $cidadeUf,
+                    'email_financeiro'   => $emailFinanceiro,
+                    'numero_os_contrato' => $numeroOsContrato,
+                    'tipo_cobranca'      => $tipoCobranca,
+                    'valor_unitario'     => $valorUnitario,
+                    'valor_total'        => $valorTotal,
                 ]);
 
                 // Atualiza/Sincroniza encontros existentes e novos
@@ -157,17 +187,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 // Criação de nova turma
                 $novoTurmaId = $turmaService->createTurma([
-                    'curso_nome'    => $cursoNome,
-                    'cliente_nome'  => $clienteNome ?: null,
-                    'modalidade'    => $modalidade,
-                    'cidade'        => $cidade ?: null,
-                    'carga_horaria' => $cargaHoraria,
-                    'status'        => $status,
-                    'turno_padrao'  => $turnoPadrao,
-                    'chave_acesso'  => $chaveAcesso ?: null,
-                    'instrutor'     => $instrutor ?: null,
-                    'ordem_servico' => $ordemServico ?: null,
-                    'ementa'        => $ementa ?: null,
+                    'curso_nome'         => $cursoNome,
+                    'cliente_nome'       => $clienteNome ?: null,
+                    'modalidade'         => $modalidade,
+                    'cidade'             => $cidade ?: null,
+                    'carga_horaria'      => $cargaHoraria,
+                    'status'             => $status,
+                    'turno_padrao'       => $turnoPadrao,
+                    'chave_acesso'       => $chaveAcesso ?: null,
+                    'instrutor'          => $instrutor ?: null,
+                    'ordem_servico'      => $ordemServico ?: null,
+                    'ementa'             => $ementa ?: null,
+                    'razao_social'       => $razaoSocial,
+                    'cnpj_tomador'       => $cnpjTomador,
+                    'cidade_uf'          => $cidadeUf,
+                    'email_financeiro'   => $emailFinanceiro,
+                    'numero_os_contrato' => $numeroOsContrato,
+                    'tipo_cobranca'      => $tipoCobranca,
+                    'valor_unitario'     => $valorUnitario,
+                    'valor_total'        => $valorTotal,
                 ], $gradeSubmetida);
 
                 header("Location: /diario/turma?turma_id={$novoTurmaId}&msg=created");
@@ -537,6 +575,84 @@ ob_start();
             </div>
         </div>
 
+        <!-- Bloco Faturamento & Dados Financeiros (Ticket 13) -->
+        <div class="card-section">
+            <h2 class="section-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span>Faturamento &amp; Dados Financeiros</span>
+            </h2>
+            <p style="font-size: 0.8125rem; color: var(--ff-ink-muted); margin-top: -0.5rem; margin-bottom: 1rem;">
+                Preenchimento flexível para apoio à emissão de NFS-e (pode ser preenchido agora ou no encerramento da turma).
+            </p>
+
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="razao_social">Razão Social do Tomador (NFS-e)</label>
+                    <input type="text" id="razao_social" name="razao_social" class="form-control"
+                           value="<?= htmlspecialchars($turma['razao_social'] ?? $turma['cliente_nome'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                           placeholder="Ex: Cooperativa de Crédito Central S/A">
+                </div>
+
+                <div class="form-group">
+                    <label for="cnpj_tomador">CNPJ / CPF do Tomador</label>
+                    <input type="text" id="cnpj_tomador" name="cnpj_tomador" class="form-control"
+                           value="<?= htmlspecialchars($turma['cnpj_tomador'] ?? $turma['cliente_cnpj'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                           placeholder="Ex: 00.000.000/0001-00">
+                </div>
+            </div>
+
+            <div class="grid-3">
+                <div class="form-group">
+                    <label for="cidade_uf">Município e UF de Faturamento</label>
+                    <input type="text" id="cidade_uf" name="cidade_uf" class="form-control"
+                           value="<?= htmlspecialchars($turma['cidade_uf'] ?? $turma['cidade'] ?? 'Goiânia - GO', ENT_QUOTES, 'UTF-8') ?>"
+                           placeholder="Ex: Goiânia - GO">
+                </div>
+
+                <div class="form-group">
+                    <label for="email_financeiro">E-mail Financeiro (Envio NFS-e)</label>
+                    <input type="email" id="email_financeiro" name="email_financeiro" class="form-control"
+                           value="<?= htmlspecialchars($turma['email_financeiro'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                           placeholder="Ex: financeiro@empresa.com.br">
+                </div>
+
+                <div class="form-group">
+                    <label for="numero_os_contrato">Nº da Ordem de Serviço ou Contrato</label>
+                    <input type="text" id="numero_os_contrato" name="numero_os_contrato" class="form-control"
+                           value="<?= htmlspecialchars($turma['numero_os_contrato'] ?? $turma['ordem_servico'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                           placeholder="Ex: OS-2026-042 ou CT-8819">
+                </div>
+            </div>
+
+            <div class="grid-3" style="background: var(--ff-paper); padding: 1rem; border-radius: var(--ff-radius-sm); border: 1px solid var(--ff-line);">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="tipo_cobranca">Tipo de Cobrança *</label>
+                    <select id="tipo_cobranca" name="tipo_cobranca" class="form-control" onchange="recalcularTotalFinanceiro()">
+                        <?php 
+                        $tc = $turma['tipo_cobranca'] ?? 'hora_aula';
+                        ?>
+                        <option value="hora_aula" <?= $tc === 'hora_aula' ? 'selected' : '' ?>>Hora-Aula (Horas Reais × Valor Hora)</option>
+                        <option value="por_aluno" <?= $tc === 'por_aluno' ? 'selected' : '' ?>>Por Aluno (Alunos Matriculados × Valor Unitário)</option>
+                        <option value="valor_fechado" <?= $tc === 'valor_fechado' ? 'selected' : '' ?>>Valor Fechado (Preço Fixo da Turma)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="valor_unitario" id="label_valor_unitario">Valor Unitário (R$)</label>
+                    <input type="number" step="0.01" min="0" id="valor_unitario" name="valor_unitario" class="form-control"
+                           value="<?= htmlspecialchars((string)($turma['valor_unitario'] ?? $turma['valor_hora_aula'] ?? '0.00'), ENT_QUOTES, 'UTF-8') ?>"
+                           oninput="recalcularTotalFinanceiro()">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="valor_total">Valor Total Previsto / Faturado (R$)</label>
+                    <input type="number" step="0.01" min="0" id="valor_total" name="valor_total" class="form-control"
+                           style="font-weight: 700; color: var(--ff-cyan);"
+                           value="<?= htmlspecialchars((string)($turma['valor_total'] ?? '0.00'), ENT_QUOTES, 'UTF-8') ?>">
+                </div>
+            </div>
+        </div>
+
         <!-- Bloco 2: Bidirecionalidade Inteligente de Horários e Turnos Padrão -->
         <div class="card-section">
             <h2 class="section-title">
@@ -848,6 +964,44 @@ ob_start();
             });
         }
     }
+
+    // Cálculo dinâmico reativo de faturamento (Ticket 13)
+    function recalcularTotalFinanceiro() {
+        var tipoEl = document.getElementById('tipo_cobranca');
+        if (!tipoEl) return;
+        var tipo = tipoEl.value;
+        var vUnit = parseFloat(document.getElementById('valor_unitario').value) || 0;
+        var totalEl = document.getElementById('valor_total');
+        var labelUnit = document.getElementById('label_valor_unitario');
+
+        if (tipo === 'hora_aula') {
+            if (labelUnit) labelUnit.innerText = 'Valor da Hora-Aula (R$)';
+            var ch = parseFloat(document.getElementById('carga_horaria').value) || 0;
+            totalEl.value = (ch * vUnit).toFixed(2);
+        } else if (tipo === 'por_aluno') {
+            if (labelUnit) labelUnit.innerText = 'Valor por Aluno (R$)';
+            var totalAlunos = <?= (int)($totalAlunos ?? 0) ?>;
+            if (totalAlunos > 0) {
+                totalEl.value = (totalAlunos * vUnit).toFixed(2);
+            }
+        } else if (tipo === 'valor_fechado') {
+            if (labelUnit) labelUnit.innerText = 'Valor Fechado Global (R$)';
+            if (vUnit > 0 && (!parseFloat(totalEl.value) || parseFloat(totalEl.value) === 0)) {
+                totalEl.value = vUnit.toFixed(2);
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var chEl = document.getElementById('carga_horaria');
+        if (chEl) {
+            chEl.addEventListener('input', function() {
+                if (document.getElementById('tipo_cobranca')?.value === 'hora_aula') {
+                    recalcularTotalFinanceiro();
+                }
+            });
+        }
+    });
 </script>
 <?php
 $contentHtml = ob_get_clean();

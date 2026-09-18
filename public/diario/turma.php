@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../src/Services/AttendanceService.php';
 require_once __DIR__ . '/../../src/Services/ExcelSyncService.php';
 require_once __DIR__ . '/../../src/Services/MaterialService.php';
 require_once __DIR__ . '/../../src/Services/TurmaService.php';
+require_once __DIR__ . '/../../src/Services/BillingService.php';
 require_once __DIR__ . '/../../src/Views/layout_admin.php';
 
 use FuturoFacil\Config\Database;
@@ -22,6 +23,7 @@ use FuturoFacil\Services\AttendanceService;
 use FuturoFacil\Services\ExcelSyncService;
 use FuturoFacil\Services\MaterialService;
 use FuturoFacil\Services\TurmaService;
+use FuturoFacil\Services\BillingService;
 use function FuturoFacil\Views\renderAdminLayout;
 
 AuthService::requireAuth();
@@ -32,6 +34,7 @@ $excelSyncService = new ExcelSyncService($pdo);
 $materialService = new MaterialService($pdo);
 $calendarService = new CalendarService($pdo);
 $turmaService = new TurmaService($pdo, $calendarService);
+$billingService = new BillingService($pdo);
 
 $turmaId = isset($_GET['turma_id']) ? (int)$_GET['turma_id'] : (isset($_GET['id']) ? (int)$_GET['id'] : 0);
 
@@ -494,6 +497,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
+// -------------------------------------------------------------
+// AÇÃO: Atualização de Faturamento e Dados Fiscais (Ticket 13)
+// -------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_billing') {
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!AuthService::verifyCsrfToken($csrfToken)) {
+        $feedbackMessage = 'Token de segurança inválido. Tente novamente.';
+        $feedbackType = 'danger';
+    } else {
+        try {
+            $billingService->updateBillingData($turmaId, [
+                'razao_social'       => $_POST['razao_social'] ?? null,
+                'cnpj_tomador'       => $_POST['cnpj_tomador'] ?? null,
+                'cidade_uf'          => $_POST['cidade_uf'] ?? null,
+                'email_financeiro'   => $_POST['email_financeiro'] ?? null,
+                'numero_os_contrato' => $_POST['numero_os_contrato'] ?? null,
+                'tipo_cobranca'      => $_POST['tipo_cobranca'] ?? 'hora_aula',
+                'valor_unitario'     => $_POST['valor_unitario'] ?? null,
+                'valor_total'        => $_POST['valor_total'] ?? null,
+            ]);
+            $feedbackMessage = 'Dados de Faturamento & Dados Financeiros atualizados com sucesso!';
+            $feedbackType = 'success';
+            $stmtTurma->execute([$turmaId]);
+            $turma = $stmtTurma->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $feedbackMessage = 'Erro ao atualizar faturamento: ' . $e->getMessage();
+            $feedbackType = 'danger';
+        }
+    }
+}
+
 // Consulta todos os materiais da turma (ativos e ocultos para administração)
 $materiaisTurma = $materialService->getMateriaisByTurma($turmaId, false);
 
@@ -519,6 +553,7 @@ $stmtAlunos->execute([$turmaId]);
 $alunos = $stmtAlunos->fetchAll(PDO::FETCH_ASSOC);
 
 $cumulativeFrequencies = $attendanceService->calculateCumulativeFrequencies($turmaId);
+$billingData = $billingService->getTurmaBillingData($turmaId);
 
 $isTrashed = !empty($turma['deleted_at']);
 $statusClass = $isTrashed ? 'status-lixeira' : ('status-' . ($turma['status'] === 'em_andamento' ? 'andamento' : ($turma['status'] === 'concluida' ? 'concluida' : 'prevista')));
@@ -1210,6 +1245,36 @@ function copiarMensagemWhatsappTurma() {
         prompt("Copie a mensagem abaixo para o WhatsApp:", texto);
     }
 }
+
+function copiarNfseTexto() {
+    var ta = document.getElementById('nfseTextoBox');
+    if (!ta) return;
+    var texto = ta.value;
+    var toast = document.getElementById('toastNfse');
+
+    var showToast = function() {
+        if (toast) {
+            toast.style.display = 'inline-flex';
+            setTimeout(function() {
+                toast.style.display = 'none';
+            }, 4000);
+        }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(function() {
+            showToast();
+        }).catch(function() {
+            ta.select();
+            document.execCommand('copy');
+            showToast();
+        });
+    } else {
+        ta.select();
+        document.execCommand('copy');
+        showToast();
+    }
+}
 </script>
 
 <?php if (!empty($activeDiff)): ?>
@@ -1381,6 +1446,147 @@ function copiarMensagemWhatsappTurma() {
     </div>
 </div>
 <?php endif; ?>
+
+<!-- Card de Faturamento, Dados Financeiros e Apoio à NFS-e (Ticket 13) -->
+<div class="sync-actions-card" style="background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%); border-color: #BBF7D0; margin-bottom: 2rem;">
+    <div class="sync-text" style="width: 100%;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.5rem;">
+            <h3 style="color: #166534; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span>Faturamento &amp; Dados Financeiros</span>
+            </h3>
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <span style="background: #15803D; color: #FFFFFF; font-size: 1rem; font-weight: 800; padding: 4px 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(22, 101, 52, 0.2);">
+                    R$ <?= number_format((float)$billingData['valor_total_calculado'], 2, ',', '.') ?>
+                </span>
+                <span class="chip-tag" style="background: #DCFCE7; color: #166534; border: 1px solid #86EFAC; font-weight: 700; font-size: 0.75rem;">
+                    <?= match($billingData['tipo_cobranca']) {
+                        'por_aluno'     => 'Por Aluno (' . $billingData['total_alunos'] . ' matriculados)',
+                        'hora_aula'     => 'Hora-Aula (' . $billingData['total_horas'] . 'h apuradas)',
+                        'valor_fechado' => 'Valor Fechado Global',
+                        default         => $billingData['tipo_cobranca'],
+                    } ?>
+                </span>
+            </div>
+        </div>
+
+        <p style="color: #15803D; margin-bottom: 1rem; font-size: 0.875rem;">
+            Dados fiscais do tomador e apoio assistido para emissão de nota fiscal de serviços na prefeitura.
+            <?= match($billingData['tipo_cobranca']) {
+                'por_aluno'     => 'Cálculo dinâmico: ' . $billingData['total_alunos'] . ' aluno(s) × R$ ' . number_format((float)$billingData['valor_unitario'], 2, ',', '.') . ' = <strong>R$ ' . number_format((float)$billingData['valor_total_calculado'], 2, ',', '.') . '</strong>.',
+                'hora_aula'     => 'Cálculo dinâmico: ' . $billingData['total_horas'] . 'h executadas × R$ ' . number_format((float)$billingData['valor_unitario'], 2, ',', '.') . '/h = <strong>R$ ' . number_format((float)$billingData['valor_total_calculado'], 2, ',', '.') . '</strong>.',
+                'valor_fechado' => 'Valor de fechamento contratual da turma: <strong>R$ ' . number_format((float)$billingData['valor_total_calculado'], 2, ',', '.') . '</strong>.',
+                default         => '',
+            } ?>
+        </p>
+
+        <!-- Bento Grid com Dados do Tomador e Faturamento -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; background: #FFFFFF; border: 1px solid #BBF7D0; border-radius: 8px; padding: 0.875rem 1rem;">
+            <div>
+                <div style="font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.05em;">Tomador do Serviço</div>
+                <div style="font-size: 0.875rem; font-weight: 700; color: #14532D; margin-top: 0.2rem;"><?= htmlspecialchars($billingData['razao_social'] ?: 'Não preenchido', ENT_QUOTES, 'UTF-8') ?></div>
+            </div>
+            <div>
+                <div style="font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.05em;">CNPJ / CPF</div>
+                <div style="font-size: 0.875rem; font-family: monospace; font-weight: 700; color: #14532D; margin-top: 0.2rem;"><?= htmlspecialchars($billingData['cnpj_tomador'] ?: 'Não preenchido', ENT_QUOTES, 'UTF-8') ?></div>
+            </div>
+            <div>
+                <div style="font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.05em;">Município / UF</div>
+                <div style="font-size: 0.875rem; font-weight: 600; color: #14532D; margin-top: 0.2rem;"><?= htmlspecialchars($billingData['cidade_uf'] ?: 'Goiânia - GO', ENT_QUOTES, 'UTF-8') ?></div>
+            </div>
+            <div>
+                <div style="font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.05em;">Ordem de Serviço / Contrato</div>
+                <div style="font-size: 0.875rem; font-weight: 700; color: #14532D; margin-top: 0.2rem;"><?= htmlspecialchars($billingData['numero_os_contrato'] ?: '—', ENT_QUOTES, 'UTF-8') ?></div>
+            </div>
+        </div>
+
+        <!-- Gerador Assistido de Texto para NFS-e -->
+        <div style="margin-top: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; flex-wrap: wrap; gap: 0.5rem;">
+                <label style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.05em;">
+                    Discriminação dos Serviços para NFS-e (Gerador Assistido)
+                </label>
+                <span style="font-size: 0.75rem; color: #15803D;">Datas e horários reais sincronizados dos encontros de aula</span>
+            </div>
+            <textarea id="nfseTextoBox" rows="6" readonly style="width: 100%; font-family: monospace; font-size: 0.775rem; line-height: 1.45; background: #FFFFFF; border: 1px solid #BBF7D0; border-radius: 8px; padding: 0.75rem; color: #14532D; resize: vertical; box-sizing: border-box;"><?= htmlspecialchars($billingData['nfse_texto'], ENT_QUOTES, 'UTF-8') ?></textarea>
+        </div>
+
+        <!-- Botões de Ação e Toast Feedback -->
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <button type="button" class="btn-export-excel" style="background: #15803D; cursor: pointer; border: none;" onclick="copiarNfseTexto()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+                    <span>Copiar Descrição para NFS-e</span>
+                </button>
+                <button type="button" class="btn-import-trigger" style="color: #166534; border-color: #86EFAC; background: #FFFFFF;" onclick="document.getElementById('editBillingBox').classList.toggle('active');">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    <span>Editar Dados Fiscais</span>
+                </button>
+            </div>
+
+            <!-- Toast / Notificação de Cópia -->
+            <div id="toastNfse" style="display: none; align-items: center; gap: 0.5rem; background: #065F46; color: #FFFFFF; font-size: 0.8125rem; font-weight: 700; padding: 0.45rem 0.85rem; border-radius: 6px; box-shadow: 0 4px 10px rgba(6, 95, 70, 0.25);">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Copiado com sucesso! Pronto para colar no emissor da prefeitura.</span>
+            </div>
+        </div>
+
+        <!-- Painel Retrátil: Edição Rápida de Faturamento -->
+        <div id="editBillingBox" class="upload-box" style="border-color: #86EFAC; background: #FFFFFF; margin-top: 1rem;">
+            <form method="POST" action="/diario/turma?turma_id=<?= $turmaId ?>" style="display: flex; flex-direction: column; gap: 0.875rem;">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(AuthService::getCsrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="action" value="update_billing">
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 0.25rem;">Razão Social do Tomador</label>
+                        <input type="text" name="razao_social" value="<?= htmlspecialchars($billingData['razao_social'], ENT_QUOTES, 'UTF-8') ?>" placeholder="Razão Social completa" style="width: 100%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 0.25rem;">CNPJ / CPF do Tomador</label>
+                        <input type="text" name="cnpj_tomador" value="<?= htmlspecialchars($billingData['cnpj_tomador'], ENT_QUOTES, 'UTF-8') ?>" placeholder="00.000.000/0001-00" style="width: 100%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 0.25rem;">Município / UF</label>
+                        <input type="text" name="cidade_uf" value="<?= htmlspecialchars($billingData['cidade_uf'], ENT_QUOTES, 'UTF-8') ?>" placeholder="Ex: Goiânia - GO" style="width: 100%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 0.25rem;">E-mail Financeiro</label>
+                        <input type="email" name="email_financeiro" value="<?= htmlspecialchars($billingData['email_financeiro'], ENT_QUOTES, 'UTF-8') ?>" placeholder="financeiro@empresa.com.br" style="width: 100%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 0.25rem;">Nº OS / Contrato</label>
+                        <input type="text" name="numero_os_contrato" value="<?= htmlspecialchars($billingData['numero_os_contrato'], ENT_QUOTES, 'UTF-8') ?>" placeholder="Ex: OS-2026-042" style="width: 100%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 0.25rem;">Tipo de Cobrança</label>
+                        <select name="tipo_cobranca" style="width: 100%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                            <option value="hora_aula" <?= $billingData['tipo_cobranca'] === 'hora_aula' ? 'selected' : '' ?>>Hora-Aula (Horas × Valor)</option>
+                            <option value="por_aluno" <?= $billingData['tipo_cobranca'] === 'por_aluno' ? 'selected' : '' ?>>Por Aluno (Alunos × Valor)</option>
+                            <option value="valor_fechado" <?= $billingData['tipo_cobranca'] === 'valor_fechado' ? 'selected' : '' ?>>Valor Fechado Global</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 0.25rem;">Valor Unitário (R$)</label>
+                        <input type="number" step="0.01" min="0" name="valor_unitario" value="<?= htmlspecialchars((string)$billingData['valor_unitario'], ENT_QUOTES, 'UTF-8') ?>" style="width: 100%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 0.25rem;">Valor Total Faturado (R$)</label>
+                        <input type="number" step="0.01" min="0" name="valor_total" value="<?= htmlspecialchars((string)$billingData['valor_total_salvo'], ENT_QUOTES, 'UTF-8') ?>" placeholder="Deixe em branco para calcular" style="width: 100%; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8125rem;">
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-import-trigger" style="font-size: 0.75rem; padding: 0.4rem 0.8rem;" onclick="document.getElementById('editBillingBox').classList.remove('active');">Fechar</button>
+                    <button type="submit" class="btn-export-excel" style="background: #15803D; font-size: 0.75rem; padding: 0.4rem 0.8rem;">Salvar Dados Financeiros</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- Card de Sincronização e Download/Upload Excel -->
 <div class="sync-actions-card">

@@ -50,6 +50,21 @@ class TurmaService
                     $this->pdo->exec("ALTER TABLE turmas ADD COLUMN deleted_at TEXT NULL DEFAULT NULL");
                     $this->pdo->exec("CREATE INDEX IF NOT EXISTS idx_turmas_deleted_at ON turmas(deleted_at)");
                 }
+                $fiscalCols = [
+                    'razao_social'       => 'TEXT NULL',
+                    'cnpj_tomador'       => 'TEXT NULL',
+                    'cidade_uf'          => 'TEXT NULL',
+                    'email_financeiro'   => 'TEXT NULL',
+                    'numero_os_contrato' => 'TEXT NULL',
+                    'tipo_cobranca'      => "TEXT NOT NULL DEFAULT 'hora_aula'",
+                    'valor_unitario'     => 'REAL NOT NULL DEFAULT 0.00',
+                    'valor_total'        => 'REAL NOT NULL DEFAULT 0.00',
+                ];
+                foreach ($fiscalCols as $fCol => $fDef) {
+                    if (!in_array($fCol, $names, true)) {
+                        $this->pdo->exec("ALTER TABLE turmas ADD COLUMN {$fCol} {$fDef}");
+                    }
+                }
             } else {
                 $check = $this->pdo->query("
                     SELECT COLUMN_NAME 
@@ -61,6 +76,26 @@ class TurmaService
                 if (!$check) {
                     $this->pdo->exec("ALTER TABLE `turmas` ADD COLUMN `deleted_at` DATETIME NULL DEFAULT NULL AFTER `ementa`");
                     $this->pdo->exec("CREATE INDEX `idx_turmas_deleted_at` ON `turmas` (`deleted_at`)");
+                }
+                $fiscalColsMysql = [
+                    'razao_social'       => 'VARCHAR(255) NULL AFTER `cliente_nome`',
+                    'cnpj_tomador'       => 'VARCHAR(20) NULL AFTER `razao_social`',
+                    'cidade_uf'          => 'VARCHAR(100) NULL AFTER `cnpj_tomador`',
+                    'email_financeiro'   => 'VARCHAR(255) NULL AFTER `cidade_uf`',
+                    'numero_os_contrato' => 'VARCHAR(50) NULL AFTER `email_financeiro`',
+                    'valor_unitario'     => 'DECIMAL(10, 2) NOT NULL DEFAULT 0.00 AFTER `valor_hora_aula`',
+                ];
+                foreach ($fiscalColsMysql as $fCol => $fDef) {
+                    $checkCol = $this->pdo->query("
+                        SELECT COLUMN_NAME 
+                        FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                          AND TABLE_NAME = 'turmas' 
+                          AND COLUMN_NAME = '{$fCol}'
+                    ")->fetchColumn();
+                    if (!$checkCol) {
+                        $this->pdo->exec("ALTER TABLE `turmas` ADD COLUMN `{$fCol}` {$fDef}");
+                    }
                 }
             }
         } catch (Throwable) {
@@ -535,22 +570,63 @@ class TurmaService
         $instrutor = trim((string)($dadosTurma['instrutor'] ?? '')) ?: null;
         $ementa = trim((string)($dadosTurma['ementa'] ?? '')) ?: null;
 
+        $razaoSocial = trim((string)($dadosTurma['razao_social'] ?? '')) ?: null;
+        $cnpjTomador = trim((string)($dadosTurma['cnpj_tomador'] ?? '')) ?: null;
+        $cidadeUf = trim((string)($dadosTurma['cidade_uf'] ?? '')) ?: null;
+        $emailFinanceiro = trim((string)($dadosTurma['email_financeiro'] ?? '')) ?: null;
+        $numeroOsContrato = trim((string)($dadosTurma['numero_os_contrato'] ?? '')) ?: null;
+        $tipoCobranca = trim((string)($dadosTurma['tipo_cobranca'] ?? 'hora_aula')) ?: 'hora_aula';
+        $valorUnitario = (float)($dadosTurma['valor_unitario'] ?? $dadosTurma['valor_hora_aula'] ?? 0.0);
+        $valorTotal = (float)($dadosTurma['valor_total'] ?? 0.0);
+
+        // Sincronização bidirecional com campos legados
+        if ($razaoSocial && empty($clienteNome)) {
+            $clienteNome = $razaoSocial;
+        } elseif ($clienteNome && empty($razaoSocial)) {
+            $razaoSocial = $clienteNome;
+        }
+
+        if ($numeroOsContrato && empty($ordemServico)) {
+            $ordemServico = $numeroOsContrato;
+        } elseif ($ordemServico && empty($numeroOsContrato)) {
+            $numeroOsContrato = $ordemServico;
+        }
+
+        $clienteCnpj = trim((string)($dadosTurma['cliente_cnpj'] ?? '')) ?: null;
+        if ($cnpjTomador && empty($clienteCnpj)) {
+            $clienteCnpj = $cnpjTomador;
+        } elseif ($clienteCnpj && empty($cnpjTomador)) {
+            $cnpjTomador = $clienteCnpj;
+        }
+
+        if ($cidadeUf && empty($cidade)) {
+            $cidade = $cidadeUf;
+        } elseif ($cidade && empty($cidadeUf)) {
+            $cidadeUf = $cidade;
+        }
+
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare("
                 INSERT INTO turmas (
                     codigo_turma, curso_nome, cliente_nome, ordem_servico,
-                    modalidade, carga_horaria, data_inicio, data_conclusao,
+                    razao_social, cnpj_tomador, cidade_uf, email_financeiro,
+                    numero_os_contrato, tipo_cobranca, valor_unitario, valor_hora_aula, valor_total,
+                    cliente_cnpj, modalidade, carga_horaria, data_inicio, data_conclusao,
                     turno_padrao, status, chave_acesso, cidade, instrutor, ementa
                 ) VALUES (
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?
                 )
             ");
             $stmt->execute([
                 $codigoTurma, $cursoNome, $clienteNome, $ordemServico,
-                $modalidade, $cargaHoraria, $dataInicio, $dataConclusao,
+                $razaoSocial, $cnpjTomador, $cidadeUf, $emailFinanceiro,
+                $numeroOsContrato, $tipoCobranca, $valorUnitario, $valorUnitario, $valorTotal,
+                $clienteCnpj, $modalidade, $cargaHoraria, $dataInicio, $dataConclusao,
                 $turnoPadrao, $status, $chaveAcesso, $cidade, $instrutor, $ementa
             ]);
 
@@ -616,6 +692,29 @@ class TurmaService
     {
         $this->ensureSchema();
 
+        // Sincronização bidirecional antes da montagem da query
+        if (isset($dados['razao_social']) && !isset($dados['cliente_nome'])) {
+            $dados['cliente_nome'] = $dados['razao_social'];
+        } elseif (isset($dados['cliente_nome']) && !isset($dados['razao_social'])) {
+            $dados['razao_social'] = $dados['cliente_nome'];
+        }
+
+        if (isset($dados['numero_os_contrato']) && !isset($dados['ordem_servico'])) {
+            $dados['ordem_servico'] = $dados['numero_os_contrato'];
+        } elseif (isset($dados['ordem_servico']) && !isset($dados['numero_os_contrato'])) {
+            $dados['numero_os_contrato'] = $dados['ordem_servico'];
+        }
+
+        if (isset($dados['cnpj_tomador']) && !isset($dados['cliente_cnpj'])) {
+            $dados['cliente_cnpj'] = $dados['cnpj_tomador'];
+        } elseif (isset($dados['cliente_cnpj']) && !isset($dados['cnpj_tomador'])) {
+            $dados['cnpj_tomador'] = $dados['cliente_cnpj'];
+        }
+
+        if (isset($dados['valor_unitario']) && !isset($dados['valor_hora_aula'])) {
+            $dados['valor_hora_aula'] = $dados['valor_unitario'];
+        }
+
         $fields = [];
         $params = [];
 
@@ -625,7 +724,9 @@ class TurmaService
             'tipo_cobranca', 'valor_hora_aula', 'valor_total', 'carga_horaria',
             'carga_horaria_extenso', 'data_inicio', 'data_conclusao', 'turno_padrao',
             'status', 'chave_acesso', 'portal_certificados_modo', 'instrutor',
-            'cidade', 'ementa'
+            'cidade', 'ementa',
+            'razao_social', 'cnpj_tomador', 'cidade_uf', 'email_financeiro',
+            'numero_os_contrato', 'valor_unitario'
         ];
 
         foreach ($allowed as $f) {
