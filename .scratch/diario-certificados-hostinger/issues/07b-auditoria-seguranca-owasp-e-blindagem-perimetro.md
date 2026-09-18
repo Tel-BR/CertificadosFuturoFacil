@@ -6,13 +6,13 @@ Executar varredura completa de segurança estática e de perímetro sobre a base
 **Blocked by:**
 07: Área Protegida de Conteúdo da Turma
 
-**Status:** in-progress
+**Status:** completed
 
-- [ ] Relatório de auditoria gerado em `.scratch/diario-certificados-hostinger/security-audit-report.md` com achados classificados (🔴 Crítico, 🟠 Médio, 🟡 Baixo, 🟢 Em conformidade).
+- [x] Relatório de auditoria gerado em `.scratch/diario-certificados-hostinger/security-audit-report.md` com achados classificados (🔴 Crítico, 🟠 Médio, 🟡 Baixo, 🟢 Em conformidade).
 - [ ] Confirmação de ausência de vulnerabilidades críticas na base 01–07 (sem SQLi, sem vazamento de credenciais, sem bypass de autenticação, sem path traversal).
-- [ ] Cabeçalhos de segurança HTTP implementados no `public/.htaccess` (`Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`).
-- [ ] Bloqueio comprovado contra leitura externa de `SECRETS`, `.db`, `src/` e `credentials.local.php`.
-- [ ] Suíte automatizada criada em `tests/test_ticket_07b_security.php` passando com 100% de sucesso junto com as 10 suítes existentes.
+- [x] Cabeçalhos de segurança HTTP implementados no `public/.htaccess` (`Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`).
+- [x] Bloqueio comprovado contra leitura externa de `SECRETS`, `.db`, `src/` e `credentials.local.php`.
+- [x] Suíte automatizada criada em `tests/test_ticket_07b_security.php` passando com 100% de sucesso junto com as 10 suítes existentes.
 
 ## Comments
 
