@@ -55,6 +55,8 @@ if (!$turma) {
     exit;
 }
 
+$csrfToken = AuthService::getCsrfToken();
+
 // -------------------------------------------------------------
 // AÇÃO: Exportação direta do arquivo .xlsx
 // -------------------------------------------------------------
