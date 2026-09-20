@@ -69,7 +69,7 @@ class BillingService
 
         // 2. Apuração de horas reais de aulas (excluindo deslocamentos logísticos)
         $stmtEnc = $this->pdo->prepare("
-            SELECT data_encontro, turno, horario_inicio, horario_fim, tipo
+            SELECT data_encontro, turno, horario_inicio, horario_fim, intervalo_minutos, tipo
             FROM encontros
             WHERE turma_id = ?
               AND (tipo IS NULL OR tipo = 'aula')
@@ -86,7 +86,8 @@ class BillingService
                 $tIni = strtotime("1970-01-01 {$hIni}");
                 $tFim = strtotime("1970-01-01 {$hFim}");
                 if ($tFim !== false && $tIni !== false && $tFim > $tIni) {
-                    $horasComputadas += ($tFim - $tIni) / 3600.0;
+                    $intervalo = max(0, (int)($enc['intervalo_minutos'] ?? 0));
+                    $horasComputadas += max(0.0, (($tFim - $tIni) / 3600.0) - ($intervalo / 60.0));
                     continue;
                 }
             }
@@ -196,7 +197,7 @@ class BillingService
             $totalAlunos = (int)$stmtAlunos->fetchColumn();
 
             $stmtEnc = $this->pdo->prepare("
-                SELECT horario_inicio, horario_fim, turno
+                SELECT horario_inicio, horario_fim, intervalo_minutos, turno
                 FROM encontros
                 WHERE turma_id = ? AND (tipo IS NULL OR tipo = 'aula')
             ");
@@ -211,7 +212,8 @@ class BillingService
                     $tIni = strtotime("1970-01-01 {$hIni}");
                     $tFim = strtotime("1970-01-01 {$hFim}");
                     if ($tFim !== false && $tIni !== false && $tFim > $tIni) {
-                        $horas += ($tFim - $tIni) / 3600.0;
+                        $intervalo = max(0, (int)($enc['intervalo_minutos'] ?? 0));
+                        $horas += max(0.0, (($tFim - $tIni) / 3600.0) - ($intervalo / 60.0));
                         continue;
                     }
                 }

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS encontros (
     turno TEXT NOT NULL DEFAULT 'V',
     horario_inicio TEXT NULL,
     horario_fim TEXT NULL,
+    intervalo_minutos INTEGER NOT NULL DEFAULT 0,
     conteudo_previsto TEXT NULL,
     conteudo_ministrado TEXT NULL,
     tipo TEXT NOT NULL DEFAULT 'aula',

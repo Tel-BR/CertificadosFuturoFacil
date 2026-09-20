@@ -142,7 +142,7 @@ class ExcelSyncService
         // ABA 2: Diário e Planos
         // -------------------------------------------------------------
         $sheet2Rows = [
-            ['Encontro', 'Data', 'Turno', 'Horário Início', 'Horário Fim', 'Tipo', 'Abonado', 'Conteúdo Previsto', 'Conteúdo Ministrado']
+            ['Encontro', 'Data', 'Turno', 'Horário Início', 'Horário Fim', 'Intervalo (min)', 'Tipo', 'Abonado', 'Conteúdo Previsto', 'Conteúdo Ministrado']
         ];
         foreach ($encontros as $enc) {
             $sheet2Rows[] = [
@@ -151,6 +151,7 @@ class ExcelSyncService
                 (string)$enc['turno'],
                 substr((string)$enc['horario_inicio'], 0, 5),
                 substr((string)$enc['horario_fim'], 0, 5),
+                (int)($enc['intervalo_minutos'] ?? 0),
                 (string)$enc['tipo'],
                 ((int)$enc['abonado'] === 1) ? 'Sim' : 'Não',
                 (string)($enc['conteudo_previsto'] ?? ''),
@@ -320,6 +321,7 @@ class ExcelSyncService
             $colDataIdx = $this->findColumnIndex($headerP, ['data', 'data da aula']);
             $colHoraIniIdx = $this->findColumnIndex($headerP, ['horário início', 'horario inicio', 'horário inicio', 'horario início']);
             $colHoraFimIdx = $this->findColumnIndex($headerP, ['horário fim', 'horario fim', 'horário término', 'horario termino']);
+            $colIntervaloIdx = $this->findColumnIndex($headerP, ['intervalo (min)', 'intervalo min', 'intervalo minutos', 'intervalo']);
 
             for ($i = 1; $i < count($sheetPlanos); $i++) {
                 $row = $sheetPlanos[$i];
@@ -352,6 +354,9 @@ class ExcelSyncService
                 if ($horaFim && preg_match('/^(\d{1,2}):(\d{2})/', $horaFim, $m)) {
                     $horaFim = sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]);
                 }
+                $intervaloMinutos = ($colIntervaloIdx !== -1 && isset($row[$colIntervaloIdx]) && $row[$colIntervaloIdx] !== '')
+                    ? max(0, (int)$row[$colIntervaloIdx])
+                    : null;
 
                 $conteudoPrevisto = ($colPrevIdx !== -1 && isset($row[$colPrevIdx])) ? trim((string)$row[$colPrevIdx]) : null;
                 $conteudoMinistrado = ($colMinIdx !== -1 && isset($row[$colMinIdx])) ? trim((string)$row[$colMinIdx]) : null;
@@ -385,6 +390,14 @@ class ExcelSyncService
                         'novo'     => substr($horaFim, 0, 5),
                     ];
                     $horarioMudou = true;
+                }
+
+                if ($intervaloMinutos !== null && $intervaloMinutos !== (int)($dbEnc['intervalo_minutos'] ?? 0)) {
+                    $mudancasEnc[] = [
+                        'campo' => 'Intervalo (min)',
+                        'anterior' => (int)($dbEnc['intervalo_minutos'] ?? 0),
+                        'novo' => $intervaloMinutos,
+                    ];
                 }
 
                 if ($conteudoPrevisto !== null && $conteudoPrevisto !== '' && $conteudoPrevisto !== (string)$dbEnc['conteudo_previsto']) {
@@ -892,6 +905,7 @@ class ExcelSyncService
                 $colDataIdx = $this->findColumnIndex($headerP, ['data', 'data da aula']);
                 $colHoraIniIdx = $this->findColumnIndex($headerP, ['horário início', 'horario inicio', 'horário inicio', 'horario início']);
                 $colHoraFimIdx = $this->findColumnIndex($headerP, ['horário fim', 'horario fim', 'horário término', 'horario termino']);
+                $colIntervaloIdx = $this->findColumnIndex($headerP, ['intervalo (min)', 'intervalo min', 'intervalo minutos', 'intervalo']);
 
                 for ($i = 1; $i < count($sheetPlanos); $i++) {
                     $row = $sheetPlanos[$i];
@@ -909,12 +923,15 @@ class ExcelSyncService
                     $dataEnc = ($colDataIdx !== -1 && isset($row[$colDataIdx])) ? trim((string)$row[$colDataIdx]) : null;
                     $horaIni = ($colHoraIniIdx !== -1 && isset($row[$colHoraIniIdx])) ? trim((string)$row[$colHoraIniIdx]) : null;
                     $horaFim = ($colHoraFimIdx !== -1 && isset($row[$colHoraFimIdx])) ? trim((string)$row[$colHoraFimIdx]) : null;
+                    $intervaloMinutos = ($colIntervaloIdx !== -1 && isset($row[$colIntervaloIdx]) && $row[$colIntervaloIdx] !== '')
+                        ? max(0, (int)$row[$colIntervaloIdx])
+                        : null;
 
                     if ($dataEnc && preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $dataEnc, $m)) {
                         $dataEnc = sprintf('%04d-%02d-%02d', (int)$m[3], (int)$m[2], (int)$m[1]);
                     }
 
-                    $stmtFindEnc = $this->pdo->prepare("SELECT id FROM encontros WHERE turma_id = ? AND numero_encontro = ?");
+                    $stmtFindEnc = $this->pdo->prepare("SELECT id, horario_inicio, horario_fim FROM encontros WHERE turma_id = ? AND numero_encontro = ?");
                     $stmtFindEnc->execute([$turmaId, $numEnc]);
                     $encRow = $stmtFindEnc->fetch(PDO::FETCH_ASSOC);
 
@@ -942,6 +959,10 @@ class ExcelSyncService
                         if ($horaFim !== null && preg_match('/^(\d{1,2}):(\d{2})/', $horaFim, $m)) {
                             $encUpdates[] = "horario_fim = ?";
                             $encParams[] = sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]);
+                        }
+                        if ($intervaloMinutos !== null) {
+                            $encUpdates[] = "intervalo_minutos = ?";
+                            $encParams[] = $intervaloMinutos;
                         }
                         if ($horaIni !== null || $horaFim !== null) {
                             $hIniEfetivo = ($horaIni && preg_match('/^(\d{1,2}):(\d{2})/', $horaIni, $m)) ? sprintf('%02d:%02d:00', (int)$m[1], (int)$m[2]) : ($encRow['horario_inicio'] ?? '14:00:00');

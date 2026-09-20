@@ -122,6 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $hIni = trim((string)($eData['horario_inicio'] ?? ''));
             $hFim = trim((string)($eData['horario_fim'] ?? ''));
+            $intervaloMinutos = max(0, (int)($eData['intervalo_minutos'] ?? 0));
             $tEnc = !empty($eData['turno']) ? strtoupper(trim((string)$eData['turno'])) : TurmaService::inferTurnoFromHorarios($hIni, $hFim, $turnoPadrao);
             
             $gradeSubmetida[] = [
@@ -131,6 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'turno'             => $tEnc,
                 'horario_inicio'    => $hIni,
                 'horario_fim'       => $hFim,
+                'intervalo_minutos' => $intervaloMinutos,
                 'conteudo_previsto' => trim((string)($eData['conteudo_previsto'] ?? '')),
                 'tipo'              => trim((string)($eData['tipo'] ?? 'aula')) ?: 'aula',
             ];
@@ -730,6 +732,7 @@ ob_start();
                             <th style="width: 110px;">Turno</th>
                             <th style="width: 100px;">Início</th>
                             <th style="width: 100px;">Fim</th>
+                            <th style="width: 95px;">Intervalo</th>
                             <th style="width: 110px;">Tipo</th>
                             <th>Conteúdo Previsto</th>
                             <th style="width: 80px; text-align: center;">Ações</th>
@@ -741,6 +744,7 @@ ob_start();
                                 $encTurno = strtoupper(trim((string)($enc['turno'] ?? 'V')));
                                 $hIniEnc = !empty($enc['horario_inicio']) ? substr($enc['horario_inicio'], 0, 5) : '14:00';
                                 $hFimEnc = !empty($enc['horario_fim']) ? substr($enc['horario_fim'], 0, 5) : '18:00';
+                                $intervaloMinutosEnc = max(0, (int)($enc['intervalo_minutos'] ?? 0));
                                 $totalFreq = (int)($enc['total_freq'] ?? 0);
                             ?>
                                 <tr data-row-idx="<?= $idx ?>">
@@ -767,6 +771,10 @@ ob_start();
                                     <td>
                                         <input type="time" name="encontros[<?= $idx ?>][horario_fim]" class="form-control row-hfim" style="padding: 0.35rem 0.5rem;"
                                                value="<?= htmlspecialchars($hFimEnc, ENT_QUOTES, 'UTF-8') ?>" onchange="onRowTimeChange(this)">
+                                    </td>
+                                    <td>
+                                        <input type="number" name="encontros[<?= $idx ?>][intervalo_minutos]" class="form-control" min="0" step="1" style="padding: 0.35rem 0.5rem;"
+                                               value="<?= $intervaloMinutosEnc ?>" aria-label="Intervalo em minutos">
                                     </td>
                                     <td>
                                         <select name="encontros[<?= $idx ?>][tipo]" class="form-control" style="padding: 0.35rem 0.5rem;">
@@ -930,6 +938,9 @@ ob_start();
             </td>
             <td>
                 <input type="time" name="encontros[\${idx}][horario_fim]" class="form-control row-hfim" style="padding: 0.35rem 0.5rem;" value="\${defaultEnd}" onchange="onRowTimeChange(this)">
+            </td>
+            <td>
+                <input type="number" name="encontros[\${idx}][intervalo_minutos]" class="form-control" min="0" step="1" style="padding: 0.35rem 0.5rem;" value="0" aria-label="Intervalo em minutos">
             </td>
             <td>
                 <select name="encontros[\${idx}][tipo]" class="form-control" style="padding: 0.35rem 0.5rem;">

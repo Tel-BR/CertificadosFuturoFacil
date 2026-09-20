@@ -279,7 +279,7 @@ try {
         2 => [
             'B3' => '05/10/2026', // Reagendamento de aula com chamada realizada!
             'D3' => '14:30', 'E3' => '18:30',
-            'H4' => 'Design avançado com Bookmarks e Tooltips', // Novo conteúdo previsto
+            'I4' => 'Design avançado com Bookmarks e Tooltips', // Novo conteúdo previsto
         ],
         3 => [
             'B2' => 'Análise de Dados Avançada com Power BI', // Título alterado
@@ -380,7 +380,8 @@ try {
         2 => [
             'B2' => '10/10/2026', // Nova data
             'D2' => '13:00', 'E2' => '17:00', // Novo horário (Vespertino)
-            'H2' => '', // Célula vazia de conteúdo ministrado: DEVE PRESERVAR O ANTERIOR!
+            'F2' => '45', // Intervalo de 45 minutos
+            'J2' => '', // Célula vazia de conteúdo ministrado: DEVE PRESERVAR O ANTERIOR!
         ]
     ];
     $xlsxReagendamento = editWorkbookForTest($baseXlsx, $editsReagendamento);
@@ -393,13 +394,14 @@ try {
     assertTest($resReag['success'] === true, "Sincronização do reagendamento aplicada com sucesso");
 
     // Verifica que data e horário foram atualizados no banco
-    $stmtEnc1 = $pdo->prepare("SELECT data_encontro, horario_inicio, horario_fim, conteudo_ministrado FROM encontros WHERE turma_id = ? AND numero_encontro = 1");
+    $stmtEnc1 = $pdo->prepare("SELECT data_encontro, horario_inicio, horario_fim, intervalo_minutos, conteudo_ministrado FROM encontros WHERE turma_id = ? AND numero_encontro = 1");
     $stmtEnc1->execute([$turmaId]);
     $enc1Row = $stmtEnc1->fetch(PDO::FETCH_ASSOC);
 
     assertTest($enc1Row['data_encontro'] === '2026-10-10', "Data do Encontro 1 atualizada para 2026-10-10");
     assertTest(str_starts_with((string)$enc1Row['horario_inicio'], '13:00'), "Horário de início atualizado para 13:00");
     assertTest(str_starts_with((string)$enc1Row['horario_fim'], '17:00'), "Horário de término atualizado para 17:00");
+    assertTest((int)$enc1Row['intervalo_minutos'] === 45, "Intervalo de 45 minutos atualizado pela planilha");
     assertTest($enc1Row['conteudo_ministrado'] === 'Aula ministrada com Star Schema e ETL.', "Conteúdo ministrado anterior PRESERVADO (não foi apagado por célula vazia)");
 
     // Verifica que presenças continuam intactas para o Encontro 1

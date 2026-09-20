@@ -113,6 +113,9 @@ class TurmaService
                     $this->pdo->exec("ALTER TABLE encontros ADD COLUMN deleted_at TEXT NULL DEFAULT NULL");
                     $this->pdo->exec("CREATE INDEX IF NOT EXISTS idx_encontros_deleted_at ON encontros(deleted_at)");
                 }
+                if (!in_array('intervalo_minutos', $names, true)) {
+                    $this->pdo->exec("ALTER TABLE encontros ADD COLUMN intervalo_minutos INTEGER NOT NULL DEFAULT 0");
+                }
             } else {
                 $check = $this->pdo->query("
                     SELECT COLUMN_NAME 
@@ -124,6 +127,16 @@ class TurmaService
                 if (!$check) {
                     $this->pdo->exec("ALTER TABLE `encontros` ADD COLUMN `deleted_at` DATETIME NULL DEFAULT NULL AFTER `abonado`");
                     $this->pdo->exec("CREATE INDEX `idx_encontros_deleted_at` ON `encontros` (`deleted_at`)");
+                }
+                $checkIntervalo = $this->pdo->query("
+                    SELECT COLUMN_NAME
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'encontros'
+                      AND COLUMN_NAME = 'intervalo_minutos'
+                ")->fetchColumn();
+                if (!$checkIntervalo) {
+                    $this->pdo->exec("ALTER TABLE `encontros` ADD COLUMN `intervalo_minutos` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `horario_fim`");
                 }
             }
         } catch (Throwable) {
@@ -724,8 +737,8 @@ class TurmaService
             $stmtEnc = $this->pdo->prepare("
                 INSERT INTO encontros (
                     turma_id, numero_encontro, data_encontro, turno,
-                    horario_inicio, horario_fim, conteudo_previsto, tipo
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    horario_inicio, horario_fim, intervalo_minutos, conteudo_previsto, tipo
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
 
             foreach ($encontros as $enc) {
@@ -736,6 +749,7 @@ class TurmaService
 
                 $hIni = trim((string)($enc['horario_inicio'] ?? ''));
                 $hFim = trim((string)($enc['horario_fim'] ?? ''));
+                $intervaloMinutos = max(0, (int)($enc['intervalo_minutos'] ?? 0));
 
                 // Turno: usa o informado ou infere pelos horários livres
                 $tEnc = !empty($enc['turno']) ? strtoupper(trim((string)$enc['turno'])) : self::inferTurnoFromHorarios($hIni, $hFim, $turnoPadrao);
@@ -756,7 +770,7 @@ class TurmaService
 
                 $stmtEnc->execute([
                     $turmaId, $numAtual, $dEnc, $tEnc,
-                    $hIni, $hFim, $conteudo, $tipo
+                    $hIni, $hFim, $intervaloMinutos, $conteudo, $tipo
                 ]);
 
                 $numEnc++;
@@ -876,6 +890,7 @@ class TurmaService
 
         $hIni = trim((string)($encontroData['horario_inicio'] ?? ''));
         $hFim = trim((string)($encontroData['horario_fim'] ?? ''));
+        $intervaloMinutos = max(0, (int)($encontroData['intervalo_minutos'] ?? 0));
         $turno = !empty($encontroData['turno']) ? strtoupper(trim((string)$encontroData['turno'])) : self::inferTurnoFromHorarios($hIni, $hFim);
 
         if (empty($hIni) || empty($hFim)) {
@@ -890,12 +905,12 @@ class TurmaService
         $stmt = $this->pdo->prepare("
             INSERT INTO encontros (
                 turma_id, numero_encontro, data_encontro, turno,
-                horario_inicio, horario_fim, conteudo_previsto, tipo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                horario_inicio, horario_fim, intervalo_minutos, conteudo_previsto, tipo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
             $turmaId, $proxNum, $dataEncontro, $turno,
-            $hIni, $hFim, $conteudo, $tipo
+            $hIni, $hFim, $intervaloMinutos, $conteudo, $tipo
         ]);
 
         $novoId = (int)$this->pdo->lastInsertId();
@@ -936,6 +951,10 @@ class TurmaService
         if (isset($encontroData['horario_fim'])) {
             $fields[] = "horario_fim = ?";
             $params[] = $hFim ?: null;
+        }
+        if (isset($encontroData['intervalo_minutos'])) {
+            $fields[] = "intervalo_minutos = ?";
+            $params[] = max(0, (int)$encontroData['intervalo_minutos']);
         }
         if (isset($encontroData['turno'])) {
             $t = strtoupper(trim((string)$encontroData['turno']));
@@ -1437,4 +1456,3 @@ class TurmaService
         }
     }
 }
-

@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS `encontros` (
     `turno` ENUM('M', 'V', 'N', 'D') NOT NULL DEFAULT 'V',
     `horario_inicio` TIME NULL,
     `horario_fim` TIME NULL,
+    `intervalo_minutos` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Intervalo não pedagógico descontado da carga horária do encontro',
     `conteudo_previsto` TEXT NULL,
     `conteudo_ministrado` TEXT NULL,
     `tipo` ENUM('aula', 'deslocamento') NOT NULL DEFAULT 'aula' COMMENT 'aula = Encontro pedagógico regular, deslocamento = Bloqueio de viagem logística',

@@ -160,10 +160,13 @@ if (!empty($_FILES['migration_sql']['tmp_name'])) {
 if (!empty($sqlDelta) && is_string($sqlDelta)) {
     try {
         $pdo = Database::getConnection();
-        // Divide o SQL por ponto e vírgula
+        // Remove comentários de linha antes de dividir o SQL por ponto e vírgula.
+        // Sem essa normalização, um comentário no início de uma migração fazia
+        // o primeiro comando ser descartado inteiro pelo filtro abaixo.
+        $sqlDeltaSemComentarios = preg_replace('/^\\h*--[^\\r\\n]*(?:\\r?\\n|$)/m', '', $sqlDelta);
         $statements = array_filter(
-            array_map('trim', explode(';', $sqlDelta)),
-            fn($s) => !empty($s) && !str_starts_with($s, '--')
+            array_map('trim', explode(';', $sqlDeltaSemComentarios ?? $sqlDelta)),
+            fn($s) => !empty($s)
         );
 
         $pdo->beginTransaction();

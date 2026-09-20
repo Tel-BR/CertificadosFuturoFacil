@@ -888,7 +888,7 @@ class CalendarService
         $endMonth = sprintf('%04d-%02d-%02d', $year, $month, $totalDays);
 
         $sql = "
-            SELECT e.id, e.turma_id, e.turno, e.horario_inicio, e.horario_fim, e.tipo,
+            SELECT e.id, e.turma_id, e.turno, e.horario_inicio, e.horario_fim, e.intervalo_minutos, e.tipo,
                    t.carga_horaria, t.codigo_turma, t.curso_nome,
                    (SELECT COUNT(*) FROM encontros e2 WHERE e2.turma_id = e.turma_id AND e2.tipo = 'aula') AS total_aulas_turma
             FROM encontros e
@@ -910,7 +910,8 @@ class CalendarService
                 $tIni = strtotime($a['horario_inicio']);
                 $tFim = strtotime($a['horario_fim']);
                 if ($tFim > $tIni) {
-                    $horas = ($tFim - $tIni) / 3600.0;
+                    $intervalo = max(0, (int)($a['intervalo_minutos'] ?? 0));
+                    $horas = max(0.0, (($tFim - $tIni) / 3600.0) - ($intervalo / 60.0));
                 }
             }
             if ($horas <= 0 && !empty($a['carga_horaria']) && (int)$a['total_aulas_turma'] > 0) {
