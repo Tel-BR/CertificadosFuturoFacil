@@ -1,4 +1,13 @@
-# Certificados Futuro Fácil 🎓
+# ⚠️ PROJETO ARQUIVADO E INCORPORADO
+
+> **ATENÇÃO:** O desenvolvimento deste repositório foi **concluído e promovido para produção**, sendo oficialmente incorporado como módulo (`apps/plataforma/`) dentro do monorepo unificado **[Tel-BR/futurofacil](https://github.com/Tel-BR/futurofacil)**.
+> 
+> Este repositório encontra-se **congelado em modo leitura (read-only)** para preservação do histórico de commits. Todo novo desenvolvimento, tickets, PRs e melhorias devem ser realizados diretamente no repositório canônico:
+> 👉 **[https://github.com/Tel-BR/futurofacil](https://github.com/Tel-BR/futurofacil)**
+
+---
+
+# Certificados Futuro Fácil 🎓 (Arquivo Histórico)
 
 Sistema corporativo e notarial para **emissão, registro e validação pública de certificados digitais** em conformidade com as diretrizes do MEC/LDB para cursos livres e princípios de proteção de dados (LGPD).
 
